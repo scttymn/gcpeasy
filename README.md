@@ -123,6 +123,7 @@ gcpeasy --version
 
 ### Authentication
 - `gcpeasy login` - Authenticate with Google Cloud
+- `gcpeasy logout` - Logout from Google Cloud
 
 ### Environment Management
 - `gcpeasy env list` - List available GCP projects
@@ -212,7 +213,7 @@ gcpeasy respects and manages your current context:
 gcpeasy/
 ├── cmd/                    # CLI commands
 │   ├── root.go            # Root command and global flags
-│   ├── login.go           # Authentication command
+│   ├── auth.go            # Authentication commands (login/logout)
 │   ├── env.go             # Environment/project management
 │   ├── cluster.go         # Cluster management
 │   ├── pods.go            # Pod listing command
