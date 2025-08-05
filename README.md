@@ -47,7 +47,7 @@ A CLI tool to make GCP and Kubernetes workflows easy. gcpeasy streamlines workin
 
 ### Download Pre-built Binaries (Recommended)
 
-Download the latest release for your platform from the [releases page](https://github.com/your-username/gcpeasy/releases).
+Download the latest release for your platform from the [releases page](https://github.com/scttymn/gcpeasy/releases).
 
 #### Linux
 ```bash
