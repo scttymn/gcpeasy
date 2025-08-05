@@ -169,6 +169,56 @@ func SelectPod(pods []string) (string, error) {
 	return pods[num-1], nil
 }
 
+// SetupClusterAndSelectPod handles the full workflow of cluster selection, kubectl config, and pod selection
+func SetupClusterAndSelectPod(projectID string) (string, error) {
+	// Get and select GKE cluster
+	fmt.Println("🔍 Getting GKE clusters...")
+	clusters, err := GetGKEClusters(projectID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get GKE clusters: %w", err)
+	}
+
+	if len(clusters) == 0 {
+		fmt.Println("❌ No GKE clusters found in the current project")
+		fmt.Println("Make sure you have GKE clusters set up and configured.")
+		return "", fmt.Errorf("no clusters found")
+	}
+
+	selectedCluster, err := SelectCluster(clusters)
+	if err != nil {
+		return "", err // Error already includes "cancelled by user" check
+	}
+	
+	fmt.Printf("🔧 Using cluster: %s in %s\n", selectedCluster.Name, selectedCluster.Location)
+
+	// Configure kubectl for the cluster
+	fmt.Println("🔧 Configuring kubectl...")
+	if err := ConfigureKubectl(projectID, *selectedCluster); err != nil {
+		return "", fmt.Errorf("failed to configure kubectl: %w", err)
+	}
+	fmt.Println("✅ kubectl configured")
+
+	// Find and select pods
+	fmt.Println("🔍 Searching for application pods...")
+	pods, err := FindApplicationPods()
+	if err != nil {
+		return "", fmt.Errorf("failed to find application pods: %w", err)
+	}
+
+	if len(pods) == 0 {
+		fmt.Println("❌ No pods found")
+		fmt.Println("Make sure your application is deployed and running.")
+		return "", fmt.Errorf("no pods found")
+	}
+
+	selectedPod, err := SelectPod(pods)
+	if err != nil {
+		return "", err // Error already includes "cancelled by user" check
+	}
+
+	return selectedPod, nil
+}
+
 func isSystemNamespace(namespace string) bool {
 	systemNamespaces := []string{"kube-system", "kube-public", "kube-node-lease", "gke-system"}
 	for _, sysNs := range systemNamespaces {

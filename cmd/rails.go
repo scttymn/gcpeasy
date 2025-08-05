@@ -28,8 +28,42 @@ var railsConsoleCmd = &cobra.Command{
 	},
 }
 
+var railsLogsCmd = &cobra.Command{
+	Use:   "logs",
+	Short: "View Rails application logs",
+	Long:  "View logs from Rails application pods. Use -f to follow logs in real-time. Use -e/--error or -w/--warn to filter by log level.",
+	Run: func(cmd *cobra.Command, args []string) {
+		follow, _ := cmd.Flags().GetBool("follow")
+		errorOnly, _ := cmd.Flags().GetBool("error")
+		warnOnly, _ := cmd.Flags().GetBool("warn")
+		infoOnly, _ := cmd.Flags().GetBool("info")
+		debugOnly, _ := cmd.Flags().GetBool("debug")
+		
+		var level string
+		if errorOnly {
+			level = "error"
+		} else if warnOnly {
+			level = "warn"
+		} else if infoOnly {
+			level = "info"
+		} else if debugOnly {
+			level = "debug"
+		}
+		
+		if err := runRailsLogs(follow, level); err != nil {
+			fmt.Printf("Error viewing logs: %v\n", err)
+		}
+	},
+}
+
 func init() {
+	railsLogsCmd.Flags().BoolP("follow", "f", false, "Follow logs in real-time")
+	railsLogsCmd.Flags().BoolP("error", "e", false, "Show only error logs")
+	railsLogsCmd.Flags().BoolP("warn", "w", false, "Show only warning logs")
+	railsLogsCmd.Flags().BoolP("info", "i", false, "Show only info logs")
+	railsLogsCmd.Flags().BoolP("debug", "d", false, "Show only debug logs")
 	railsCmd.AddCommand(railsConsoleCmd)
+	railsCmd.AddCommand(railsLogsCmd)
 	rootCmd.AddCommand(railsCmd)
 }
 
@@ -55,61 +89,52 @@ func runRailsConsole() error {
 
 	fmt.Printf("🔍 Looking for Rails applications in project: %s\n", currentProject)
 
-	// Get and select GKE cluster
-	fmt.Println("🔍 Getting GKE clusters...")
-	clusters, err := internal.GetGKEClusters(currentProject)
-	if err != nil {
-		return fmt.Errorf("failed to get GKE clusters: %w", err)
-	}
-
-	if len(clusters) == 0 {
-		fmt.Println("❌ No GKE clusters found in the current project")
-		fmt.Println("Make sure you have GKE clusters set up and configured.")
-		return nil
-	}
-
-	selectedCluster, err := internal.SelectCluster(clusters)
+	selectedPod, err := internal.SetupClusterAndSelectPod(currentProject)
 	if err != nil {
 		if strings.Contains(err.Error(), "cancelled by user") {
 			fmt.Println("Cancelled.")
 			return nil
 		}
-		return fmt.Errorf("failed to select cluster: %w", err)
-	}
-	
-	fmt.Printf("🔧 Using cluster: %s in %s\n", selectedCluster.Name, selectedCluster.Location)
-
-	// Configure kubectl for the cluster
-	fmt.Println("🔧 Configuring kubectl...")
-	if err := internal.ConfigureKubectl(currentProject, *selectedCluster); err != nil {
-		return fmt.Errorf("failed to configure kubectl: %w", err)
-	}
-	fmt.Println("✅ kubectl configured")
-
-	// Find and select pods
-	fmt.Println("🔍 Searching for application pods...")
-	pods, err := internal.FindApplicationPods()
-	if err != nil {
-		return fmt.Errorf("failed to find application pods: %w", err)
-	}
-
-	if len(pods) == 0 {
-		fmt.Println("❌ No pods found")
-		fmt.Println("Make sure your application is deployed and running.")
-		return nil
-	}
-
-	selectedPod, err := internal.SelectPod(pods)
-	if err != nil {
-		if strings.Contains(err.Error(), "cancelled by user") {
-			fmt.Println("Cancelled.")
-			return nil
-		}
-		return fmt.Errorf("failed to select pod: %w", err)
+		return err
 	}
 
 	fmt.Printf("🚀 Connecting to Rails console in pod: %s\n", selectedPod)
 	return connectToRailsConsole(selectedPod)
+}
+
+func runRailsLogs(follow bool, level string) error {
+	// Check if user is authenticated
+	fmt.Println("🔍 Checking authentication...")
+	if !isAuthenticated() {
+		fmt.Println("❌ Not authenticated with Google Cloud")
+		fmt.Println("Please run 'gcpeasy login' first to authenticate.")
+		return nil
+	}
+	fmt.Println("✅ Authenticated")
+
+	// Get current project
+	fmt.Println("🔍 Getting current project...")
+	currentProject := getCurrentProject()
+	if currentProject == "" {
+		fmt.Println("❌ No GCP project selected")
+		fmt.Println("Please run 'gcpeasy env select' to choose an environment.")
+		return nil
+	}
+	fmt.Printf("✅ Current project: %s\n", currentProject)
+
+	fmt.Printf("🔍 Looking for Rails applications in project: %s\n", currentProject)
+
+	selectedPod, err := internal.SetupClusterAndSelectPod(currentProject)
+	if err != nil {
+		if strings.Contains(err.Error(), "cancelled by user") {
+			fmt.Println("Cancelled.")
+			return nil
+		}
+		return err
+	}
+
+	fmt.Printf("📋 Viewing logs for pod: %s\n", selectedPod)
+	return viewPodLogs(selectedPod, follow, level)
 }
 
 func connectToRailsConsole(podNameWithNamespace string) error {
@@ -159,4 +184,84 @@ func connectToRailsConsole(podNameWithNamespace string) error {
 	cmd.Stdin = os.Stdin
 	
 	return cmd.Run()
+}
+
+func viewPodLogs(podNameWithNamespace string, follow bool, level string) error {
+	parts := strings.Split(podNameWithNamespace, "/")
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid pod format: %s", podNameWithNamespace)
+	}
+	
+	namespace := parts[0]
+	podName := parts[1]
+	
+	if level != "" {
+		fmt.Printf("📋 Filtering logs by level: %s\n", strings.ToUpper(level))
+	}
+	
+	if follow {
+		fmt.Println("🔄 Following logs (press Ctrl+C to stop)...")
+	} else {
+		fmt.Println("📋 Fetching logs...")
+	}
+	fmt.Println()
+	
+	// Build kubectl logs command
+	args := []string{"logs", podName, "-n", namespace}
+	if follow {
+		args = append(args, "-f")
+	}
+	
+	cmd := exec.Command("kubectl", args...)
+	
+	// If filtering by level, pipe through grep
+	if level != "" {
+		grepPatterns := getLogLevelPatterns(level)
+		if len(grepPatterns) > 0 {
+			// Use grep to filter logs
+			grepArgs := []string{"-E", "-i", strings.Join(grepPatterns, "|")}
+			
+			kubectlCmd := exec.Command("kubectl", args...)
+			grepCmd := exec.Command("grep", grepArgs...)
+			
+			// Pipe kubectl output to grep
+			grepCmd.Stdin, _ = kubectlCmd.StdoutPipe()
+			grepCmd.Stdout = os.Stdout
+			grepCmd.Stderr = os.Stderr
+			
+			kubectlCmd.Stderr = os.Stderr
+			
+			if err := kubectlCmd.Start(); err != nil {
+				return err
+			}
+			if err := grepCmd.Start(); err != nil {
+				return err
+			}
+			
+			if err := kubectlCmd.Wait(); err != nil {
+				return err
+			}
+			return grepCmd.Wait()
+		}
+	}
+	
+	// No filtering, run kubectl directly
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func getLogLevelPatterns(level string) []string {
+	switch strings.ToLower(level) {
+	case "error", "err":
+		return []string{"ERROR", "FATAL", "Exception", "Error"}
+	case "warn", "warning":
+		return []string{"WARN", "WARNING"}
+	case "info":
+		return []string{"INFO"}
+	case "debug":
+		return []string{"DEBUG"}
+	default:
+		return []string{}
+	}
 }
