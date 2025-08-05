@@ -39,6 +39,7 @@ A CLI tool to make GCP and Kubernetes workflows easy. gcpeasy streamlines workin
 ## Prerequisites
 
 - [Google Cloud SDK (gcloud)](https://cloud.google.com/sdk/docs/install)
+- Google Cloud Auth Plugin: `gcloud components install gke-gcloud-auth-plugin`
 - [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/)
 - Access to GCP projects and GKE clusters
 - Go 1.19+ (for building from source)
