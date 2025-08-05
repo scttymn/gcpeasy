@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -16,6 +17,18 @@ This command will open a browser window for authentication.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := runLogin(); err != nil {
 			fmt.Fprintf(os.Stderr, "Error during login: %v\n", err)
+			os.Exit(1)
+		}
+	},
+}
+
+var logoutCmd = &cobra.Command{
+	Use:   "logout",
+	Short: "Logout from Google Cloud",
+	Long:  `Logout from Google Cloud by revoking authentication credentials.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		if err := runLogout(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error during logout: %v\n", err)
 			os.Exit(1)
 		}
 	},
@@ -54,5 +67,42 @@ func runLogin() error {
 	}
 
 	fmt.Println("✅ Authentication complete!")
+	return nil
+}
+
+func runLogout() error {
+	fmt.Println("🔐 Logging out from Google Cloud...")
+	
+	// Check if gcloud is installed
+	if _, err := exec.LookPath("gcloud"); err != nil {
+		return fmt.Errorf("gcloud CLI not found. Please install the Google Cloud SDK: https://cloud.google.com/sdk/docs/install")
+	}
+
+	// Get current authenticated account
+	cmd := exec.Command("gcloud", "auth", "list", "--filter=status:ACTIVE", "--format=value(account)")
+	output, err := cmd.Output()
+	if err != nil {
+		fmt.Println("⚠️  No active authentication found")
+		return nil
+	}
+
+	account := strings.TrimSpace(string(output))
+	if account == "" {
+		fmt.Println("⚠️  No active authentication found")
+		return nil
+	}
+
+	fmt.Printf("🔓 Revoking credentials for: %s\n", account)
+
+	// Revoke authentication
+	revokeCmd := exec.Command("gcloud", "auth", "revoke", account)
+	revokeCmd.Stdout = os.Stdout
+	revokeCmd.Stderr = os.Stderr
+
+	if err := revokeCmd.Run(); err != nil {
+		return fmt.Errorf("gcloud auth revoke failed: %w", err)
+	}
+
+	fmt.Println("✅ Successfully logged out from Google Cloud")
 	return nil
 }
