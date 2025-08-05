@@ -29,9 +29,10 @@ var railsConsoleCmd = &cobra.Command{
 }
 
 var railsLogsCmd = &cobra.Command{
-	Use:   "logs",
-	Short: "View Rails application logs",
-	Long:  "View logs from Rails application pods. Use -f to follow logs in real-time. Use -e/--error or -w/--warn to filter by log level.",
+	Use:        "logs",
+	Short:      "View Rails application logs (deprecated: use 'gcpeasy pod logs')",
+	Long:       "View logs from Rails application pods. Use -f to follow logs in real-time. Use -e/--error or -w/--warn to filter by log level.\n\nDEPRECATED: This command is deprecated. Use 'gcpeasy pod logs' instead.",
+	Deprecated: "Use 'gcpeasy pod logs' instead",
 	Run: func(cmd *cobra.Command, args []string) {
 		follow, _ := cmd.Flags().GetBool("follow")
 		errorOnly, _ := cmd.Flags().GetBool("error")
@@ -50,7 +51,7 @@ var railsLogsCmd = &cobra.Command{
 			level = "debug"
 		}
 		
-		if err := runRailsLogs(follow, level); err != nil {
+		if err := runPodLogs(follow, level); err != nil {
 			fmt.Printf("Error viewing logs: %v\n", err)
 		}
 	},
@@ -102,40 +103,6 @@ func runRailsConsole() error {
 	return connectToRailsConsole(selectedPod)
 }
 
-func runRailsLogs(follow bool, level string) error {
-	// Check if user is authenticated
-	fmt.Println("🔍 Checking authentication...")
-	if !isAuthenticated() {
-		fmt.Println("❌ Not authenticated with Google Cloud")
-		fmt.Println("Please run 'gcpeasy login' first to authenticate.")
-		return nil
-	}
-	fmt.Println("✅ Authenticated")
-
-	// Get current project
-	fmt.Println("🔍 Getting current project...")
-	currentProject := getCurrentProject()
-	if currentProject == "" {
-		fmt.Println("❌ No GCP project selected")
-		fmt.Println("Please run 'gcpeasy env select' to choose an environment.")
-		return nil
-	}
-	fmt.Printf("✅ Current project: %s\n", currentProject)
-
-	fmt.Printf("🔍 Looking for Rails applications in project: %s\n", currentProject)
-
-	selectedPod, err := internal.SetupClusterAndSelectPod(currentProject)
-	if err != nil {
-		if strings.Contains(err.Error(), "cancelled by user") {
-			fmt.Println("Cancelled.")
-			return nil
-		}
-		return err
-	}
-
-	fmt.Printf("📋 Viewing logs for pod: %s\n", selectedPod)
-	return viewPodLogs(selectedPod, follow, level)
-}
 
 func connectToRailsConsole(podNameWithNamespace string) error {
 	parts := strings.Split(podNameWithNamespace, "/")
@@ -186,82 +153,3 @@ func connectToRailsConsole(podNameWithNamespace string) error {
 	return cmd.Run()
 }
 
-func viewPodLogs(podNameWithNamespace string, follow bool, level string) error {
-	parts := strings.Split(podNameWithNamespace, "/")
-	if len(parts) != 2 {
-		return fmt.Errorf("invalid pod format: %s", podNameWithNamespace)
-	}
-	
-	namespace := parts[0]
-	podName := parts[1]
-	
-	if level != "" {
-		fmt.Printf("📋 Filtering logs by level: %s\n", strings.ToUpper(level))
-	}
-	
-	if follow {
-		fmt.Println("🔄 Following logs (press Ctrl+C to stop)...")
-	} else {
-		fmt.Println("📋 Fetching logs...")
-	}
-	fmt.Println()
-	
-	// Build kubectl logs command
-	args := []string{"logs", podName, "-n", namespace}
-	if follow {
-		args = append(args, "-f")
-	}
-	
-	cmd := exec.Command("kubectl", args...)
-	
-	// If filtering by level, pipe through grep
-	if level != "" {
-		grepPatterns := getLogLevelPatterns(level)
-		if len(grepPatterns) > 0 {
-			// Use grep to filter logs
-			grepArgs := []string{"-E", "-i", strings.Join(grepPatterns, "|")}
-			
-			kubectlCmd := exec.Command("kubectl", args...)
-			grepCmd := exec.Command("grep", grepArgs...)
-			
-			// Pipe kubectl output to grep
-			grepCmd.Stdin, _ = kubectlCmd.StdoutPipe()
-			grepCmd.Stdout = os.Stdout
-			grepCmd.Stderr = os.Stderr
-			
-			kubectlCmd.Stderr = os.Stderr
-			
-			if err := kubectlCmd.Start(); err != nil {
-				return err
-			}
-			if err := grepCmd.Start(); err != nil {
-				return err
-			}
-			
-			if err := kubectlCmd.Wait(); err != nil {
-				return err
-			}
-			return grepCmd.Wait()
-		}
-	}
-	
-	// No filtering, run kubectl directly
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
-
-func getLogLevelPatterns(level string) []string {
-	switch strings.ToLower(level) {
-	case "error", "err":
-		return []string{"ERROR", "FATAL", "Exception", "Error"}
-	case "warn", "warning":
-		return []string{"WARN", "WARNING"}
-	case "info":
-		return []string{"INFO"}
-	case "debug":
-		return []string{"DEBUG"}
-	default:
-		return []string{}
-	}
-}
