@@ -1,147 +1,202 @@
-# Carebility CLI
+# gcpeasy
 
-A command-line tool to simplify common development tasks for the Carebility infrastructure and applications.
+A CLI tool to make GCP and Kubernetes workflows easy. gcpeasy streamlines working with Google Cloud Platform and Kubernetes infrastructure by providing simple commands for common development workflows. It eliminates the need to remember complex kubectl and gcloud commands and automates environment switching.
 
-## Overview
+## Table of Contents
 
-The Carebility CLI streamlines working with our complex Kubernetes infrastructure by providing simple commands for common development workflows. It eliminates the need to remember complex kubectl commands and automates environment switching.
+- [Features](#features)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Commands](#commands)
+  - [Authentication](#authentication)
+  - [Environment Management](#environment-management)
+  - [Cluster Management](#cluster-management)
+  - [Pod Operations](#pod-operations)
+  - [Rails Support](#rails-support)
+- [Usage Patterns](#usage-patterns)
+  - [Interactive Selection](#interactive-selection)
+  - [Direct Selection](#direct-selection)
+  - [Current Context](#current-context)
+- [How It Works](#how-it-works)
+  - [Cluster Behavior](#cluster-behavior)
+  - [Environment Behavior](#environment-behavior)
+  - [Pod Selection](#pod-selection)
+- [Prerequisites](#prerequisites)
+- [Project Structure](#project-structure)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Features
 
-### Core Infrastructure
-- [x] Setup Go project with cobra CLI framework
-- [ ] Implement gcloud authentication wrapper
-- [ ] Create environment discovery and selection
-- [ ] Add kubectl context management
-
-### Rails Operations
-- [ ] Implement rails console command with pod auto-discovery
-- [ ] Add log tailing with pod selection and filtering
-- [ ] Create deployment restart functionality
-- [ ] Add environment variable inspection
-
-### User Experience
-- [ ] Design intuitive command structure and help system
-- [ ] Add safety confirmations for destructive operations
-- [ ] Implement configuration file for user preferences
-
-## Planned Commands
-
-```bash
-# Authentication and environment management
-carebility-cli login
-carebility-cli env list
-carebility-cli env select demo
-carebility-cli status
-
-# Rails operations
-carebility-cli console              # Connect to Rails console
-carebility-cli logs -f              # Tail application logs
-carebility-cli restart web-app      # Restart deployment
-carebility-cli env-vars             # Show environment variables
-
-# Information commands
-carebility-cli pods                 # List relevant pods
-carebility-cli deployments         # Show deployment status
-```
-
-## Environment Structure
-
-Each Carebility environment follows these patterns:
-- **GCP Projects**: `carebility-us-<environment>-<suffix>` or `us-<environment>-<suffix>`
-- **Cluster Names**: `carebility-k8s-cluster-<environment>`
-- **Location**: `us-central1`
-
-### Current Environments
-- **Dev**: `carebility-us-dev-8b82` / `carebility-k8s-cluster-dev`
-- **Testing**: `us-testing-451620` / `carebility-k8s-cluster-testing`
-- **Demo**: `carebility-us-demo-84fc` / `carebility-k8s-cluster-demo`
-- **Staging**: `carebility-us-staging-bc2d` / `carebility-k8s-cluster-staging`
-- **Production**: `carebility-us-prod-8e73` / `carebility-k8s-cluster-prod`
-
-## Prerequisites
-
-- [gcloud CLI](https://cloud.google.com/sdk/docs/install)
-- [kubectl](https://kubernetes.io/docs/tasks/tools/#kubectl)
+- 🔐 **Authentication**: Simple GCP authentication setup
+- 🌍 **Environment Management**: Switch between GCP projects with ease
+- ⚙️ **Cluster Management**: Manage and switch between GKE clusters
+- 🐳 **Pod Operations**: Interactive pod selection and management
+- 🚀 **Rails Support**: Direct Rails console and log access
+- 💻 **Shell Access**: Connect to pod shells with automatic fallback
+- 📋 **Status Overview**: View pod status and cluster information
 
 ## Installation
 
 ```bash
-# Build from source
-go build -o carebility-cli cmd/main.go
+# Clone the repository
+git clone <repository-url>
+cd gcpeasy
 
-# Or install globally
-go install
+# Build the binary
+go build -o gcpeasy
+
+# (Optional) Add to PATH
+mv gcpeasy /usr/local/bin/
 ```
 
-## Configuration
+## Quick Start
 
-The CLI will store configuration in `~/.config/carebility-cli/config.yaml`:
+1. **Authenticate with Google Cloud:**
+   ```bash
+   gcpeasy login
+   ```
 
-```yaml
-current_environment: demo
-default_namespace: carebility
-```
+2. **Select your environment (GCP project):**
+   ```bash
+   gcpeasy env list
+   gcpeasy env select
+   ```
 
-## Usage Examples
+3. **Select your cluster:**
+   ```bash
+   gcpeasy cluster list
+   gcpeasy cluster select
+   ```
 
-### Connect to Demo Environment Rails Console
+4. **Start using the tools:**
+   ```bash
+   gcpeasy pods              # List all pods
+   gcpeasy rails console     # Access Rails console
+   gcpeasy shell            # Get shell access to a pod
+   ```
+
+## Commands
+
+### Authentication
+- `gcpeasy login` - Authenticate with Google Cloud
+
+### Environment Management
+- `gcpeasy env list` - List available GCP projects
+  - `--status` - Include connectivity status (slower)
+- `gcpeasy env select [project]` - Switch to a different project
+  - Interactive selection if no project specified
+  - Supports selection by project ID, name, or number
+
+### Cluster Management
+- `gcpeasy cluster list` - List available GKE clusters
+- `gcpeasy cluster select [cluster]` - Switch to a different cluster
+  - Interactive selection if no cluster specified
+  - Supports selection by cluster name or number
+
+### Pod Operations
+- `gcpeasy pods` - List all application pods with status information
+- `gcpeasy shell` - Open interactive shell on selected pod
+  - Tries bash, zsh, sh in order of preference
+
+### Rails Support
+- `gcpeasy rails console` (or `gcpeasy rails c`) - Access Rails console
+- `gcpeasy rails logs` - View Rails application logs
+  - `-f, --follow` - Follow logs in real-time
+  - `-e, --error` - Show only error logs
+  - `-w, --warn` - Show only warning logs
+  - `-i, --info` - Show only info logs
+  - `-d, --debug` - Show only debug logs
+
+## Usage Patterns
+
+### Interactive Selection
+Most commands support interactive selection with numbered lists:
+
 ```bash
-# Discover and select environment
-carebility-cli env select demo
+$ gcpeasy env list
+Available environments:
 
-# Connect to Rails console (auto-finds web pod)
-carebility-cli console
+- [ ] 1. project-dev (Development Project)
+- [x] 2. project-staging (Staging Project)  
+- [ ] 3. project-prod (Production Project)
+
+$ gcpeasy cluster select
+✅ Found 2 clusters:
+
+1. dev-cluster (us-central1)
+2. prod-cluster (us-east1)
+
+Select cluster (number, or 'q' to quit): 1
 ```
 
-### Tail Logs with Filtering
+### Direct Selection
+Commands also support direct selection by name or number:
+
 ```bash
-# Tail all web app logs
-carebility-cli logs web-app -f
-
-# Filter logs by keyword
-carebility-cli logs web-app -f --grep "ERROR"
+gcpeasy env select 2                    # Select by number
+gcpeasy env select project-prod         # Select by project ID
+gcpeasy cluster select prod-cluster     # Select by cluster name
 ```
 
-### Restart Deployment
-```bash
-# Restart with confirmation
-carebility-cli restart web-app
+### Current Context
+gcpeasy respects and manages your current context:
 
-# Force restart without confirmation
-carebility-cli restart web-app --force
+- **Project context**: Set with `gcpeasy env select`, used by all commands
+- **Cluster context**: Set with `gcpeasy cluster select`, configures kubectl
+- **Smart defaults**: Auto-selects when only one option available
+
+## How It Works
+
+### Cluster Behavior
+- If kubectl is configured and working → uses current context
+- If kubectl not configured → prompts for cluster selection and configures kubectl
+- Use `gcpeasy cluster select` to explicitly change clusters
+
+### Environment Behavior  
+- If only 1 project accessible → auto-selects
+- If multiple projects → prompts for selection
+- Use `gcpeasy env select` to change projects
+
+### Pod Selection
+- Shows only application pods (filters out system namespaces)
+- Displays running pods and pods with issues for debugging
+- Consistent numbered selection across all pod-related commands
+
+## Prerequisites
+
+- [Google Cloud SDK (gcloud)](https://cloud.google.com/sdk/docs/install)
+- [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/)
+- Access to GCP projects and GKE clusters
+- Go 1.19+ (for building from source)
+
+## Project Structure
+
 ```
-
-## Development
-
-### Project Structure
+gcpeasy/
+├── cmd/                    # CLI commands
+│   ├── root.go            # Root command and global flags
+│   ├── login.go           # Authentication command
+│   ├── env.go             # Environment/project management
+│   ├── cluster.go         # Cluster management
+│   ├── pods.go            # Pod listing command
+│   ├── shell.go           # Shell access command
+│   └── rails.go           # Rails-specific commands
+├── internal/              # Internal packages
+│   ├── kubernetes.go      # Kubernetes cluster operations
+│   └── pod.go            # Pod operations and selection
+├── main.go               # Application entry point
+└── README.md            # This file
 ```
-├── cmd/                    # CLI entry points
-├── internal/              # Private application code
-│   ├── commands/          # Command implementations
-│   ├── config/           # Configuration management
-│   └── k8s/              # Kubernetes operations
-├── pkg/                   # Public library code
-└── README.md
-```
-
-### Adding New Commands
-
-1. Create command file in `internal/commands/`
-2. Implement the command logic
-3. Register with Cobra in `cmd/root.go`
-4. Add tests and documentation
 
 ## Contributing
 
-1. Follow the existing command patterns
-2. Add appropriate error handling and user feedback
-3. Include safety confirmations for destructive operations
-4. Update documentation and examples
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-## Security
+## License
 
-- Never log or store sensitive credentials
-- Always verify environment before destructive operations
-- Use read-only operations when possible
-- Implement proper timeout handling for long operations
+This project is licensed under the MIT License - see the LICENSE file for details.
