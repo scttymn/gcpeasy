@@ -5,6 +5,7 @@ A CLI tool to make GCP and Kubernetes workflows easy. gcpeasy streamlines workin
 ## Table of Contents
 
 - [Features](#features)
+- [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Commands](#commands)
@@ -21,7 +22,6 @@ A CLI tool to make GCP and Kubernetes workflows easy. gcpeasy streamlines workin
   - [Cluster Behavior](#cluster-behavior)
   - [Environment Behavior](#environment-behavior)
   - [Pod Selection](#pod-selection)
-- [Prerequisites](#prerequisites)
 - [Project Structure](#project-structure)
 - [Contributing](#contributing)
 - [License](#license)
@@ -35,6 +35,13 @@ A CLI tool to make GCP and Kubernetes workflows easy. gcpeasy streamlines workin
 - 🚀 **Rails Support**: Direct Rails console and log access
 - 💻 **Shell Access**: Connect to pod shells with automatic fallback
 - 📋 **Status Overview**: View pod status and cluster information
+
+## Prerequisites
+
+- [Google Cloud SDK (gcloud)](https://cloud.google.com/sdk/docs/install)
+- [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/)
+- Access to GCP projects and GKE clusters
+- Go 1.19+ (for building from source)
 
 ## Installation
 
@@ -162,13 +169,6 @@ gcpeasy respects and manages your current context:
 - Shows only application pods (filters out system namespaces)
 - Displays running pods and pods with issues for debugging
 - Consistent numbered selection across all pod-related commands
-
-## Prerequisites
-
-- [Google Cloud SDK (gcloud)](https://cloud.google.com/sdk/docs/install)
-- [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/)
-- Access to GCP projects and GKE clusters
-- Go 1.19+ (for building from source)
 
 ## Project Structure
 
