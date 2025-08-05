@@ -1,9 +1,12 @@
 package cmd
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -37,9 +40,28 @@ var envListCmd = &cobra.Command{
 	},
 }
 
+var envSelectCmd = &cobra.Command{
+	Use:   "select [project-id|number]",
+	Short: "Switch to a different environment",
+	Long:  "Switch to a different GCP project environment. You can specify by project ID, project name, or the number from 'env list'. If no argument is provided, shows an interactive selection.",
+	Args:  cobra.MaximumNArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		if len(args) == 0 {
+			if err := selectEnvironmentInteractive(); err != nil {
+				fmt.Printf("Error selecting environment: %v\n", err)
+			}
+		} else {
+			if err := selectEnvironment(args[0]); err != nil {
+				fmt.Printf("Error selecting environment: %v\n", err)
+			}
+		}
+	},
+}
+
 func init() {
 	envListCmd.Flags().Bool("status", false, "Include connectivity status (slower)")
 	envCmd.AddCommand(envListCmd)
+	envCmd.AddCommand(envSelectCmd)
 	rootCmd.AddCommand(envCmd)
 }
 
@@ -70,26 +92,26 @@ func listEnvironments(showStatus bool) error {
 	fmt.Println()
 	
 	for i, project := range projects {
-		marker := ""
+		checkbox := "- [ ]"
 		if project.ProjectID == currentProject {
-			marker = " *current*"
+			checkbox = "- [x]"
 		}
 		
 		if showStatus {
 			status := getProjectStatus(project.ProjectID)
-			fmt.Printf("%d. %s (%s) %s%s\n", 
+			fmt.Printf("%s %d. %s (%s) %s\n", 
+				checkbox,
 				i+1, 
 				project.ProjectID,
 				project.Name, 
 				status,
-				marker,
 			)
 		} else {
-			fmt.Printf("%d. %s (%s)%s\n", 
+			fmt.Printf("%s %d. %s (%s)\n", 
+				checkbox,
 				i+1, 
 				project.ProjectID,
 				project.Name,
-				marker,
 			)
 		}
 	}
@@ -147,4 +169,109 @@ func isAuthenticated() bool {
 		return false
 	}
 	return len(strings.TrimSpace(string(output))) > 0
+}
+
+func selectEnvironment(identifier string) error {
+	if !isAuthenticated() {
+		fmt.Println("❌ Not authenticated with Google Cloud")
+		fmt.Println("Please run 'gcpeasy login' first to authenticate.")
+		return nil
+	}
+
+	projects, err := getGCPProjects()
+	if err != nil {
+		return fmt.Errorf("failed to get projects: %w", err)
+	}
+
+	if len(projects) == 0 {
+		fmt.Println("No GCP projects found.")
+		return nil
+	}
+
+	var selectedProject *GCPProject
+
+	// Try to parse as number first
+	if num, err := strconv.Atoi(identifier); err == nil {
+		if num >= 1 && num <= len(projects) {
+			selectedProject = &projects[num-1]
+		}
+	}
+
+	// If not found by number, try by project ID or name
+	if selectedProject == nil {
+		for _, project := range projects {
+			if project.ProjectID == identifier || project.Name == identifier {
+				selectedProject = &project
+				break
+			}
+		}
+	}
+
+	if selectedProject == nil {
+		fmt.Printf("Environment '%s' not found.\n", identifier)
+		fmt.Println("Use 'gcpeasy env list' to see available environments.")
+		return nil
+	}
+
+	return switchToProject(selectedProject.ProjectID)
+}
+
+func selectEnvironmentInteractive() error {
+	if !isAuthenticated() {
+		fmt.Println("❌ Not authenticated with Google Cloud")
+		fmt.Println("Please run 'gcpeasy login' first to authenticate.")
+		return nil
+	}
+
+	projects, err := getGCPProjects()
+	if err != nil {
+		return fmt.Errorf("failed to get projects: %w", err)
+	}
+
+	if len(projects) == 0 {
+		fmt.Println("No GCP projects found.")
+		return nil
+	}
+
+	fmt.Println("Available environments:")
+	fmt.Println()
+
+	currentProject := getCurrentProject()
+	for i, project := range projects {
+		checkbox := "- [ ]"
+		if project.ProjectID == currentProject {
+			checkbox = "- [x]"
+		}
+		fmt.Printf("%s %d. %s (%s)\n", checkbox, i+1, project.ProjectID, project.Name)
+	}
+
+	fmt.Println()
+	fmt.Print("Select environment (number): ")
+
+	scanner := bufio.NewScanner(os.Stdin)
+	if !scanner.Scan() {
+		return fmt.Errorf("failed to read input")
+	}
+
+	input := strings.TrimSpace(scanner.Text())
+	num, err := strconv.Atoi(input)
+	if err != nil || num < 1 || num > len(projects) {
+		fmt.Printf("Invalid selection: %s\n", input)
+		return nil
+	}
+
+	selectedProject := projects[num-1]
+	return switchToProject(selectedProject.ProjectID)
+}
+
+func switchToProject(projectID string) error {
+	fmt.Printf("Switching to project: %s\n", projectID)
+
+	cmd := exec.Command("gcloud", "config", "set", "project", projectID)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to switch project: %w", err)
+	}
+
+	fmt.Printf("✅ Successfully switched to project: %s\n", projectID)
+	return nil
 }
