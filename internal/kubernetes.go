@@ -97,96 +97,49 @@ func ConfigureKubectl(projectID string, cluster ClusterInfo) error {
 	return nil
 }
 
-// FindApplicationPods returns all running pods from non-system namespaces
-func FindApplicationPods() ([]string, error) {
-	cmd := exec.Command("kubectl", "get", "pods", "--all-namespaces", "-o", "custom-columns=NAMESPACE:.metadata.namespace,NAME:.metadata.name,STATUS:.status.phase", "--no-headers")
+// IsKubectlConfigured checks if kubectl is configured and can connect to a cluster
+func IsKubectlConfigured() bool {
+	cmd := exec.Command("kubectl", "cluster-info")
+	err := cmd.Run()
+	return err == nil
+}
+
+// GetCurrentCluster returns the current kubectl context cluster info
+func GetCurrentCluster() (string, error) {
+	cmd := exec.Command("kubectl", "config", "current-context")
 	output, err := cmd.Output()
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-
-	var appPods []string
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	
-	for _, line := range lines {
-		if line == "" {
-			continue
-		}
-		
-		fields := strings.Fields(line)
-		if len(fields) < 3 {
-			continue
-		}
-		
-		namespace := fields[0]
-		podName := fields[1]
-		status := fields[2]
-		
-		// Skip system namespaces and non-running pods
-		if isSystemNamespace(namespace) || status != "Running" {
-			continue
-		}
-		
-		appPods = append(appPods, fmt.Sprintf("%s/%s", namespace, podName))
-	}
-
-	return appPods, nil
+	return strings.TrimSpace(string(output)), nil
 }
 
-// SelectPod prompts user to select a pod from the list
-func SelectPod(pods []string) (string, error) {
-	if len(pods) == 0 {
-		return "", fmt.Errorf("no pods available")
-	}
-
-	fmt.Printf("📋 Found %d pod(s):\n", len(pods))
-	fmt.Println()
-	
-	for i, pod := range pods {
-		fmt.Printf("%d. %s\n", i+1, pod)
+// SetupClusterIfNeeded handles cluster setup only if kubectl is not configured
+func SetupClusterIfNeeded(projectID string) error {
+	// If kubectl is already configured and working, use current context
+	if IsKubectlConfigured() {
+		context, err := GetCurrentCluster()
+		if err == nil && context != "" {
+			fmt.Printf("✅ Using current cluster context: %s\n", context)
+			return nil
+		}
 	}
 	
-	fmt.Println()
-	fmt.Print("Select pod (number, or 'q' to quit): ")
+	// kubectl not configured, need to set up cluster
+	fmt.Println("🔧 kubectl not configured, setting up cluster...")
 	
-	scanner := bufio.NewScanner(os.Stdin)
-	if !scanner.Scan() {
-		return "", fmt.Errorf("failed to read input")
-	}
-	
-	input := strings.TrimSpace(scanner.Text())
-	
-	// Check for quit command
-	if input == "q" {
-		return "", fmt.Errorf("cancelled by user")
-	}
-	
-	num, err := strconv.Atoi(input)
-	if err != nil || num < 1 || num > len(pods) {
-		return "", fmt.Errorf("invalid selection: %s", input)
-	}
-	
-	return pods[num-1], nil
-}
-
-// SetupClusterAndSelectPod handles the full workflow of cluster selection, kubectl config, and pod selection
-func SetupClusterAndSelectPod(projectID string) (string, error) {
-	// Get and select GKE cluster
-	fmt.Println("🔍 Getting GKE clusters...")
 	clusters, err := GetGKEClusters(projectID)
 	if err != nil {
-		return "", fmt.Errorf("failed to get GKE clusters: %w", err)
+		return fmt.Errorf("failed to get GKE clusters: %w", err)
 	}
 
 	if len(clusters) == 0 {
-		fmt.Println("❌ No GKE clusters found in the current project")
-		fmt.Println("Make sure you have GKE clusters set up and configured.")
-		return "", fmt.Errorf("no clusters found")
+		return fmt.Errorf("no GKE clusters found in project %s", projectID)
 	}
 
 	selectedCluster, err := SelectCluster(clusters)
 	if err != nil {
-		return "", err // Error already includes "cancelled by user" check
+		return err
 	}
 	
 	fmt.Printf("🔧 Using cluster: %s in %s\n", selectedCluster.Name, selectedCluster.Location)
@@ -194,9 +147,19 @@ func SetupClusterAndSelectPod(projectID string) (string, error) {
 	// Configure kubectl for the cluster
 	fmt.Println("🔧 Configuring kubectl...")
 	if err := ConfigureKubectl(projectID, *selectedCluster); err != nil {
-		return "", fmt.Errorf("failed to configure kubectl: %w", err)
+		return fmt.Errorf("failed to configure kubectl: %w", err)
 	}
 	fmt.Println("✅ kubectl configured")
+	
+	return nil
+}
+
+// SetupClusterAndSelectPod handles cluster setup (if needed) and pod selection
+func SetupClusterAndSelectPod(projectID string) (string, error) {
+	// Setup cluster if kubectl is not configured
+	if err := SetupClusterIfNeeded(projectID); err != nil {
+		return "", err
+	}
 
 	// Find and select pods
 	fmt.Println("🔍 Searching for application pods...")
@@ -217,14 +180,4 @@ func SetupClusterAndSelectPod(projectID string) (string, error) {
 	}
 
 	return selectedPod, nil
-}
-
-func isSystemNamespace(namespace string) bool {
-	systemNamespaces := []string{"kube-system", "kube-public", "kube-node-lease", "gke-system"}
-	for _, sysNs := range systemNamespaces {
-		if namespace == sysNs {
-			return true
-		}
-	}
-	return false
 }
