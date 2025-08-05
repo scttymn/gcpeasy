@@ -66,7 +66,7 @@ sudo mv gcpeasy-linux-arm64 /usr/local/bin/gcpeasy
 curl -L https://github.com/your-username/gcpeasy/releases/latest/download/gcpeasy-macos-amd64.tar.gz | tar xz
 sudo mv gcpeasy-macos-amd64 /usr/local/bin/gcpeasy
 
-# Apple Silicon Macs (M1/M2)
+# Apple Silicon Macs
 curl -L https://github.com/your-username/gcpeasy/releases/latest/download/gcpeasy-macos-arm64.tar.gz | tar xz
 sudo mv gcpeasy-macos-arm64 /usr/local/bin/gcpeasy
 ```
