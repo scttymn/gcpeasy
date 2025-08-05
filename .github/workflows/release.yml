@@ -1,0 +1,164 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Get the version
+      id: get_version
+      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+    - name: Build binaries
+      run: |
+        # Create dist directory
+        mkdir -p dist
+        
+        # Build for different platforms
+        GOOS=linux GOARCH=amd64 go build -ldflags "-X gcpeasy/cmd.version=${{ steps.get_version.outputs.VERSION }}" -o dist/gcpeasy-linux-amd64 .
+        GOOS=linux GOARCH=arm64 go build -ldflags "-X gcpeasy/cmd.version=${{ steps.get_version.outputs.VERSION }}" -o dist/gcpeasy-linux-arm64 .
+        GOOS=darwin GOARCH=amd64 go build -ldflags "-X gcpeasy/cmd.version=${{ steps.get_version.outputs.VERSION }}" -o dist/gcpeasy-macos-amd64 .
+        GOOS=darwin GOARCH=arm64 go build -ldflags "-X gcpeasy/cmd.version=${{ steps.get_version.outputs.VERSION }}" -o dist/gcpeasy-macos-arm64 .
+        GOOS=windows GOARCH=amd64 go build -ldflags "-X gcpeasy/cmd.version=${{ steps.get_version.outputs.VERSION }}" -o dist/gcpeasy-windows-amd64.exe .
+        
+        # Create compressed archives
+        cd dist
+        tar -czf gcpeasy-linux-amd64.tar.gz gcpeasy-linux-amd64
+        tar -czf gcpeasy-linux-arm64.tar.gz gcpeasy-linux-arm64
+        tar -czf gcpeasy-macos-amd64.tar.gz gcpeasy-macos-amd64
+        tar -czf gcpeasy-macos-arm64.tar.gz gcpeasy-macos-arm64
+        zip gcpeasy-windows-amd64.zip gcpeasy-windows-amd64.exe
+
+    - name: Generate changelog
+      id: changelog
+      run: |
+        # Get commits since last tag
+        PREV_TAG=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
+        if [ -n "$PREV_TAG" ]; then
+          CHANGELOG=$(git log --pretty=format:"- %s" $PREV_TAG..HEAD)
+        else
+          CHANGELOG=$(git log --pretty=format:"- %s")
+        fi
+        
+        # Escape newlines for GitHub Actions
+        CHANGELOG="${CHANGELOG//'%'/'%25'}"
+        CHANGELOG="${CHANGELOG//$'\n'/'%0A'}"
+        CHANGELOG="${CHANGELOG//$'\r'/'%0D'}"
+        
+        echo "CHANGELOG=$CHANGELOG" >> $GITHUB_OUTPUT
+
+    - name: Create Release
+      uses: actions/create-release@v1
+      id: create_release
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.get_version.outputs.VERSION }}
+        release_name: Release ${{ steps.get_version.outputs.VERSION }}
+        body: |
+          ## Changes
+          
+          ${{ steps.changelog.outputs.CHANGELOG }}
+          
+          ## Installation
+          
+          Download the appropriate binary for your platform:
+          
+          ### Linux
+          ```bash
+          # AMD64
+          curl -L https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.VERSION }}/gcpeasy-linux-amd64.tar.gz | tar xz
+          sudo mv gcpeasy-linux-amd64 /usr/local/bin/gcpeasy
+          
+          # ARM64
+          curl -L https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.VERSION }}/gcpeasy-linux-arm64.tar.gz | tar xz
+          sudo mv gcpeasy-linux-arm64 /usr/local/bin/gcpeasy
+          ```
+          
+          ### macOS
+          ```bash
+          # Intel Macs
+          curl -L https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.VERSION }}/gcpeasy-macos-amd64.tar.gz | tar xz
+          sudo mv gcpeasy-macos-amd64 /usr/local/bin/gcpeasy
+          
+          # Apple Silicon Macs (M1/M2)
+          curl -L https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.VERSION }}/gcpeasy-macos-arm64.tar.gz | tar xz
+          sudo mv gcpeasy-macos-arm64 /usr/local/bin/gcpeasy
+          ```
+          
+          ### Windows
+          Download `gcpeasy-windows-amd64.zip` and extract the executable.
+          
+          ## Verify Installation
+          ```bash
+          gcpeasy --version
+          ```
+        draft: false
+        prerelease: false
+
+    - name: Upload Linux AMD64
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./dist/gcpeasy-linux-amd64.tar.gz
+        asset_name: gcpeasy-linux-amd64.tar.gz
+        asset_content_type: application/gzip
+
+    - name: Upload Linux ARM64
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./dist/gcpeasy-linux-arm64.tar.gz
+        asset_name: gcpeasy-linux-arm64.tar.gz
+        asset_content_type: application/gzip
+
+    - name: Upload macOS AMD64
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./dist/gcpeasy-macos-amd64.tar.gz
+        asset_name: gcpeasy-macos-amd64.tar.gz
+        asset_content_type: application/gzip
+
+    - name: Upload macOS ARM64
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./dist/gcpeasy-macos-arm64.tar.gz
+        asset_name: gcpeasy-macos-arm64.tar.gz
+        asset_content_type: application/gzip
+
+    - name: Upload Windows AMD64
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./dist/gcpeasy-windows-amd64.zip
+        asset_name: gcpeasy-windows-amd64.zip
+        asset_content_type: application/zip

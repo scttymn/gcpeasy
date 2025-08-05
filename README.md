@@ -45,6 +45,37 @@ A CLI tool to make GCP and Kubernetes workflows easy. gcpeasy streamlines workin
 
 ## Installation
 
+### Download Pre-built Binaries (Recommended)
+
+Download the latest release for your platform from the [releases page](https://github.com/your-username/gcpeasy/releases).
+
+#### Linux
+```bash
+# AMD64
+curl -L https://github.com/your-username/gcpeasy/releases/latest/download/gcpeasy-linux-amd64.tar.gz | tar xz
+sudo mv gcpeasy-linux-amd64 /usr/local/bin/gcpeasy
+
+# ARM64
+curl -L https://github.com/your-username/gcpeasy/releases/latest/download/gcpeasy-linux-arm64.tar.gz | tar xz
+sudo mv gcpeasy-linux-arm64 /usr/local/bin/gcpeasy
+```
+
+#### macOS
+```bash
+# Intel Macs
+curl -L https://github.com/your-username/gcpeasy/releases/latest/download/gcpeasy-macos-amd64.tar.gz | tar xz
+sudo mv gcpeasy-macos-amd64 /usr/local/bin/gcpeasy
+
+# Apple Silicon Macs (M1/M2)
+curl -L https://github.com/your-username/gcpeasy/releases/latest/download/gcpeasy-macos-arm64.tar.gz | tar xz
+sudo mv gcpeasy-macos-arm64 /usr/local/bin/gcpeasy
+```
+
+#### Windows
+Download `gcpeasy-windows-amd64.zip` from the releases page and extract the executable.
+
+### Build from Source
+
 ```bash
 # Clone the repository
 git clone <repository-url>
@@ -55,6 +86,11 @@ go build -o gcpeasy
 
 # (Optional) Add to PATH
 mv gcpeasy /usr/local/bin/
+```
+
+### Verify Installation
+```bash
+gcpeasy --version
 ```
 
 ## Quick Start

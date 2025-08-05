@@ -6,9 +6,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var version = "dev" // Will be set by build flags
+
 var rootCmd = &cobra.Command{
-	Use:   "gcpeasy",
-	Short: "A CLI tool to make GCP and Kubernetes workflows easy",
+	Use:     "gcpeasy",
+	Version: version,
+	Short:   "A CLI tool to make GCP and Kubernetes workflows easy",
 	Long: `gcpeasy streamlines working with Google Cloud Platform and Kubernetes infrastructure 
 by providing simple commands for common development workflows. It eliminates the need 
 to remember complex kubectl and gcloud commands and automates environment switching.`,
