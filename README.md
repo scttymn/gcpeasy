@@ -114,9 +114,10 @@ gcpeasy --version
 
 4. **Start using the tools:**
    ```bash
-   gcpeasy pods              # List all pods
-   gcpeasy rails console     # Access Rails console
-   gcpeasy shell            # Get shell access to a pod
+   gcpeasy pod list --status # List all pods with detailed status
+   gcpeasy logs             # View pod logs (shortcut)
+   gcpeasy shell            # Get shell access to a pod (shortcut)
+   gcpeasy rails console    # Access Rails console
    ```
 
 ## Commands
@@ -139,18 +140,23 @@ gcpeasy --version
   - Supports selection by cluster name or number
 
 ### Pod Operations
-- `gcpeasy pods` - List all application pods with status information
-- `gcpeasy shell` - Open interactive shell on selected pod
-  - Tries bash, zsh, sh in order of preference
-
-### Rails Support
-- `gcpeasy rails console` (or `gcpeasy rails c`) - Access Rails console
-- `gcpeasy rails logs` - View Rails application logs
+- `gcpeasy pod list` - List application pods (simple format)
+- `gcpeasy pod list --status` - List pods with detailed status information
+- `gcpeasy pod logs` - View pod logs with filtering options
   - `-f, --follow` - Follow logs in real-time
-  - `-e, --error` - Show only error logs
+  - `-e, --error` - Show only error logs  
   - `-w, --warn` - Show only warning logs
   - `-i, --info` - Show only info logs
   - `-d, --debug` - Show only debug logs
+- `gcpeasy pod shell` - Open interactive shell on selected pod
+  - Tries bash, zsh, sh in order of preference
+- `gcpeasy logs` - Shortcut for `pod logs`
+- `gcpeasy shell` - Shortcut for `pod shell`
+
+### Rails Support
+- `gcpeasy rails console` (or `gcpeasy rails c`) - Access Rails console
+- `gcpeasy rails logs` - View Rails application logs (deprecated: use `gcpeasy pod logs`)
+  - Same flags as `pod logs`
 
 ## Usage Patterns
 
@@ -216,8 +222,9 @@ gcpeasy/
 │   ├── auth.go            # Authentication commands (login/logout)
 │   ├── env.go             # Environment/project management
 │   ├── cluster.go         # Cluster management
-│   ├── pods.go            # Pod listing command
-│   ├── shell.go           # Shell access command
+│   ├── pod.go             # Pod management commands
+│   ├── logs.go            # Logs shortcut command
+│   ├── shell.go           # Shell shortcut command
 │   └── rails.go           # Rails-specific commands
 ├── internal/              # Internal packages
 │   ├── kubernetes.go      # Kubernetes cluster operations
