@@ -39,7 +39,7 @@ var railsLogsCmd = &cobra.Command{
 		warnOnly, _ := cmd.Flags().GetBool("warn")
 		infoOnly, _ := cmd.Flags().GetBool("info")
 		debugOnly, _ := cmd.Flags().GetBool("debug")
-		
+
 		var level string
 		if errorOnly {
 			level = "error"
@@ -50,8 +50,8 @@ var railsLogsCmd = &cobra.Command{
 		} else if debugOnly {
 			level = "debug"
 		}
-		
-		if err := runPodLogs(follow, level); err != nil {
+
+		if err := runPodLogs(follow, level, false); err != nil {
 			fmt.Printf("Error viewing logs: %v\n", err)
 		}
 	},
@@ -103,20 +103,19 @@ func runRailsConsole() error {
 	return connectToRailsConsole(selectedPod)
 }
 
-
 func connectToRailsConsole(podNameWithNamespace string) error {
 	parts := strings.Split(podNameWithNamespace, "/")
 	if len(parts) != 2 {
 		return fmt.Errorf("invalid pod format: %s", podNameWithNamespace)
 	}
-	
+
 	namespace := parts[0]
 	podName := parts[1]
-	
+
 	fmt.Println("🎯 Connecting to Rails console...")
 	fmt.Println("(Type 'exit' or press Ctrl+D to disconnect)")
 	fmt.Println()
-	
+
 	// Try common Rails console commands
 	consoleCommands := []string{
 		"bundle exec rails console",
@@ -126,30 +125,29 @@ func connectToRailsConsole(podNameWithNamespace string) error {
 		"bin/rails console",
 		"bin/rails c",
 	}
-	
+
 	for _, consoleCmd := range consoleCommands {
 		fmt.Printf("Trying: %s\n", consoleCmd)
-		
+
 		cmd := exec.Command("kubectl", "exec", "-it", podName, "-n", namespace, "--", "sh", "-c", consoleCmd)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		cmd.Stdin = os.Stdin
-		
+
 		err := cmd.Run()
 		if err == nil {
 			return nil
 		}
-		
+
 		fmt.Printf("Command failed, trying next option...\n")
 	}
-	
+
 	// If Rails console commands fail, try a shell
 	fmt.Println("Rails console commands failed, opening shell instead...")
 	cmd := exec.Command("kubectl", "exec", "-it", podName, "-n", namespace, "--", "/bin/bash")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
-	
+
 	return cmd.Run()
 }
-

@@ -16,7 +16,8 @@ var logsCmd = &cobra.Command{
 		warnOnly, _ := cmd.Flags().GetBool("warn")
 		infoOnly, _ := cmd.Flags().GetBool("info")
 		debugOnly, _ := cmd.Flags().GetBool("debug")
-		
+		allPods, _ := cmd.Flags().GetBool("all")
+
 		var level string
 		if errorOnly {
 			level = "error"
@@ -27,8 +28,8 @@ var logsCmd = &cobra.Command{
 		} else if debugOnly {
 			level = "debug"
 		}
-		
-		if err := runPodLogs(follow, level); err != nil {
+
+		if err := runPodLogs(follow, level, allPods); err != nil {
 			fmt.Printf("Error viewing logs: %v\n", err)
 		}
 	},
@@ -40,5 +41,6 @@ func init() {
 	logsCmd.Flags().BoolP("warn", "w", false, "Show only warning logs")
 	logsCmd.Flags().BoolP("info", "i", false, "Show only info logs")
 	logsCmd.Flags().BoolP("debug", "d", false, "Show only debug logs")
+	logsCmd.Flags().BoolP("all", "a", false, "View logs for all application pods")
 	rootCmd.AddCommand(logsCmd)
 }
