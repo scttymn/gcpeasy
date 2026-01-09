@@ -56,13 +56,13 @@ jobs:
         else
           CHANGELOG=$(git log --pretty=format:"- %s")
         fi
-        
-        # Escape newlines for GitHub Actions
-        CHANGELOG="${CHANGELOG//'%'/'%25'}"
-        CHANGELOG="${CHANGELOG//$'\n'/'%0A'}"
-        CHANGELOG="${CHANGELOG//$'\r'/'%0D'}"
-        
-        echo "CHANGELOG=$CHANGELOG" >> $GITHUB_OUTPUT
+
+        # Use heredoc for multiline output
+        {
+          echo "CHANGELOG<<EOF"
+          echo "$CHANGELOG"
+          echo "EOF"
+        } >> $GITHUB_OUTPUT
 
     - name: Create Release
       uses: actions/create-release@v1
