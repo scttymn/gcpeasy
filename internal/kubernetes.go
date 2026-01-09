@@ -116,17 +116,23 @@ func GetCurrentCluster() (string, error) {
 
 // SetupClusterIfNeeded handles cluster setup only if kubectl is not configured
 func SetupClusterIfNeeded(projectID string) error {
-	// If kubectl is already configured and working, use current context
+	// If kubectl is already configured and working, check if it matches the current project
 	if IsKubectlConfigured() {
 		context, err := GetCurrentCluster()
 		if err == nil && context != "" {
-			fmt.Printf("✅ Using current cluster context: %s\n", context)
-			return nil
+			// GKE contexts are formatted as: gke_PROJECT_LOCATION_CLUSTER
+			// Check if the context belongs to the current project
+			if strings.Contains(context, "_"+projectID+"_") || strings.HasPrefix(context, "gke_"+projectID+"_") {
+				fmt.Printf("✅ Using current cluster context: %s\n", context)
+				return nil
+			}
+			// Context is for a different project, need to set up cluster for current project
+			fmt.Printf("🔄 Current cluster context is for a different project, switching...\n")
 		}
 	}
 	
-	// kubectl not configured, need to set up cluster
-	fmt.Println("🔧 kubectl not configured, setting up cluster...")
+	// kubectl not configured or for different project, need to set up cluster
+	fmt.Println("🔧 Setting up cluster...")
 	
 	clusters, err := GetGKEClusters(projectID)
 	if err != nil {
