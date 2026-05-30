@@ -78,6 +78,45 @@ func TestPodFooterHintsExposePodActions(t *testing.T) {
 	}
 }
 
+func TestPodActionsRefreshClusterCredentials(t *testing.T) {
+	model := newTestTUIModel(t)
+	model.authenticated = true
+	model.focus = panelPods
+	model.currentProject = "project-dev"
+	model.currentCluster = "gke_project-dev_us-central1_cluster-dev"
+	model.clusters = []internal.ClusterInfo{{Name: "cluster-dev", Location: "us-central1"}}
+	model.pods = []internal.PodInfo{{Namespace: "app", Name: "web-123", Status: "Running"}}
+
+	updated, cmd := model.runPodLogs(false)
+	got := updated.(tuiModel)
+	output := strings.Join(got.output, "\n")
+
+	if cmd == nil {
+		t.Fatal("expected pod logs to start a task")
+	}
+	for _, want := range []string{
+		"gcloud container clusters get-credentials cluster-dev --location us-central1 --project project-dev",
+		"kubectl logs web-123 -n app",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected pod action output to include %q, got %q", want, output)
+		}
+	}
+}
+
+func TestKubectlScriptFallsBackWhenClusterUnknown(t *testing.T) {
+	model := newTestTUIModel(t)
+
+	script := model.kubectlScript([]string{"logs", "web-123", "-n", "app"})
+
+	if strings.Contains(script, "get-credentials") {
+		t.Fatalf("expected kubectl script without cluster metadata not to refresh credentials, got %q", script)
+	}
+	if script != "kubectl logs web-123 -n app" {
+		t.Fatalf("expected direct kubectl fallback, got %q", script)
+	}
+}
+
 func TestEnvironmentFooterHintShowsAlreadyActive(t *testing.T) {
 	model := newTestTUIModel(t)
 	model.authenticated = true

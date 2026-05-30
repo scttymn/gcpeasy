@@ -823,13 +823,9 @@ func (m tuiModel) runPodLogs(follow bool) (tea.Model, tea.Cmd) {
 	if follow {
 		title = fmt.Sprintf("Following logs: %s", podRef(pod))
 	}
-	m.setOutput(commandLine("kubectl", args), "")
-	return m, startTask(taskSpec{
-		title:       title,
-		name:        "kubectl",
-		args:        args,
-		interactive: follow,
-	}, m.outputCols(), m.outputRows())
+	script := m.kubectlScript(args)
+	m.setOutput("$ "+script, "")
+	return m, startTask(shellTask(title, script, false, follow), m.outputCols(), m.outputRows())
 }
 
 func (m tuiModel) runPodDescribe() (tea.Model, tea.Cmd) {
@@ -840,12 +836,9 @@ func (m tuiModel) runPodDescribe() (tea.Model, tea.Cmd) {
 	}
 
 	args := []string{"describe", "pod", pod.Name, "-n", pod.Namespace}
-	m.setOutput(commandLine("kubectl", args), "")
-	return m, startTask(taskSpec{
-		title: fmt.Sprintf("Describe: %s", podRef(pod)),
-		name:  "kubectl",
-		args:  args,
-	}, m.outputCols(), m.outputRows())
+	script := m.kubectlScript(args)
+	m.setOutput("$ "+script, "")
+	return m, startTask(shellTask(fmt.Sprintf("Describe: %s", podRef(pod)), script, false, false), m.outputCols(), m.outputRows())
 }
 
 func (m tuiModel) runPodShell() (tea.Model, tea.Cmd) {
@@ -864,6 +857,7 @@ func (m tuiModel) runPodShell() (tea.Model, tea.Cmd) {
 		shQuote(pod.Name),
 		shQuote(pod.Namespace),
 	)
+	script = m.withKubectlCredentials("(" + script + ")")
 	m.setOutput("$ "+script, "")
 	return m, startTask(shellTask(fmt.Sprintf("Shell: %s", podRef(pod)), script, true, true), m.outputCols(), m.outputRows())
 }
@@ -901,7 +895,7 @@ func (m tuiModel) runRailsConsole() (tea.Model, tea.Cmd) {
 		fmt.Sprintf("kubectl exec -it %s -n %s -- /bin/bash", shQuote(pod.Name), shQuote(pod.Namespace)),
 	)
 
-	script := strings.Join(attempts, " || ")
+	script := m.withKubectlCredentials("(" + strings.Join(attempts, " || ") + ")")
 	m.setOutput("$ "+script, "")
 	return m, startTask(shellTask(fmt.Sprintf("Rails console: %s", podRef(pod)), script, true, true), m.outputCols(), m.outputRows())
 }
@@ -1745,6 +1739,43 @@ func (m tuiModel) activePod() (internal.PodInfo, bool) {
 		return internal.PodInfo{}, false
 	}
 	return m.pods[cursor], true
+}
+
+func (m tuiModel) activeCluster() (internal.ClusterInfo, bool) {
+	for _, cluster := range m.clusters {
+		if isCurrentCluster(cluster, m.currentCluster) {
+			return cluster, true
+		}
+	}
+	if len(m.clusters) == 1 {
+		return m.clusters[0], true
+	}
+	return internal.ClusterInfo{}, false
+}
+
+func (m tuiModel) kubectlScript(args []string) string {
+	return m.withKubectlCredentials(shellCommand("kubectl", args))
+}
+
+func (m tuiModel) withKubectlCredentials(command string) string {
+	cluster, ok := m.activeCluster()
+	if !ok || strings.TrimSpace(m.currentProject) == "" {
+		return command
+	}
+	return credentialRefreshScript(m.currentProject, cluster) + " && " + command
+}
+
+func credentialRefreshScript(projectID string, cluster internal.ClusterInfo) string {
+	return shellCommand("gcloud", []string{
+		"container",
+		"clusters",
+		"get-credentials",
+		cluster.Name,
+		"--location",
+		cluster.Location,
+		"--project",
+		projectID,
+	}) + " >/dev/null"
 }
 
 func (m *tuiModel) validateSelectedPod() {
@@ -2720,13 +2751,17 @@ func commandError(err error, output []byte) error {
 }
 
 func commandLine(name string, args []string) string {
+	return "$ " + shellCommand(name, args)
+}
+
+func shellCommand(name string, args []string) string {
 	parts := append([]string{name}, args...)
 	for i, part := range parts {
 		if strings.ContainsAny(part, " \t\n'\"") {
 			parts[i] = shQuote(part)
 		}
 	}
-	return "$ " + strings.Join(parts, " ")
+	return strings.Join(parts, " ")
 }
 
 func shQuote(value string) string {
