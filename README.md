@@ -1,247 +1,272 @@
 # gcpeasy
 
-A CLI tool to make GCP and Kubernetes workflows easy. gcpeasy streamlines working with Google Cloud Platform and Kubernetes infrastructure by providing simple commands for common development workflows. It eliminates the need to remember complex kubectl and gcloud commands and automates environment switching.
+gcpeasy is a terminal workspace for Google Cloud and Kubernetes day-to-day work. It gives you a LazyGit-style TUI for switching GCP projects, GKE clusters, and pods, then running logs, shells, Rails consoles, and other pod tasks without repeatedly typing `gcpeasy <command>`.
 
-## Table of Contents
-
-- [Features](#features)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Commands](#commands)
-  - [Authentication](#authentication)
-  - [Environment Management](#environment-management)
-  - [Cluster Management](#cluster-management)
-  - [Pod Operations](#pod-operations)
-  - [Rails Support](#rails-support)
-- [Usage Patterns](#usage-patterns)
-  - [Interactive Selection](#interactive-selection)
-  - [Direct Selection](#direct-selection)
-  - [Current Context](#current-context)
-- [How It Works](#how-it-works)
-  - [Cluster Behavior](#cluster-behavior)
-  - [Environment Behavior](#environment-behavior)
-  - [Pod Selection](#pod-selection)
-- [Project Structure](#project-structure)
-- [Contributing](#contributing)
-- [License](#license)
+The original CLI commands still work for scripting and one-off use, but the default experience is now the interactive TUI.
 
 ## Features
 
-- 🔐 **Authentication**: Simple GCP authentication setup
-- 🌍 **Environment Management**: Switch between GCP projects with ease
-- ⚙️ **Cluster Management**: Manage and switch between GKE clusters
-- 🐳 **Pod Operations**: Interactive pod selection and management
-- 🚀 **Rails Support**: Direct Rails console and log access
-- 💻 **Shell Access**: Connect to pod shells with automatic fallback
-- 📋 **Status Overview**: View pod status and cluster information
+- Interactive TUI for environments, clusters, pods, and task output
+- Browser-based Google Cloud authentication flow when needed
+- Cached left-pane context so startup and refreshes stay usable
+- Background refresh indicator for long-running `gcloud` and `kubectl` calls
+- Pod logs, follow logs, shell access, Rails console, and describe actions from the TUI
+- Persistent visibility preferences for hiding noisy environments, clusters, and pods
+- CLI commands for automation and direct selection
 
 ## Prerequisites
 
-- [Google Cloud SDK (gcloud)](https://cloud.google.com/sdk/docs/install)
-- Google Cloud Auth Plugin: `gcloud components install gke-gcloud-auth-plugin`
+- [Google Cloud SDK](https://cloud.google.com/sdk/docs/install), including `gcloud`
+- Google Cloud Auth Plugin:
+  ```bash
+  gcloud components install gke-gcloud-auth-plugin
+  ```
 - [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/)
-- Access to GCP projects and GKE clusters
-- Go 1.19+ (for building from source)
+- Access to the GCP projects and GKE clusters you want to manage
+- Go 1.25+ when building from source
 
 ## Installation
 
-### Download Pre-built Binaries (Recommended)
+Download the latest release for your platform from [GitHub Releases](https://github.com/scttymn/gcpeasy/releases).
 
-Download the latest release for your platform from the [releases page](https://github.com/scttymn/gcpeasy/releases).
+### Linux
 
-#### Linux
 ```bash
-# AMD64
-curl -L https://github.com/your-username/gcpeasy/releases/latest/download/gcpeasy-linux-amd64.tar.gz | tar xz
+curl -L https://github.com/scttymn/gcpeasy/releases/latest/download/gcpeasy-linux-amd64.tar.gz | tar xz
 sudo mv gcpeasy-linux-amd64 /usr/local/bin/gcpeasy
-
-# ARM64
-curl -L https://github.com/your-username/gcpeasy/releases/latest/download/gcpeasy-linux-arm64.tar.gz | tar xz
-sudo mv gcpeasy-linux-arm64 /usr/local/bin/gcpeasy
 ```
 
-#### macOS
-```bash
-# Intel Macs
-curl -L https://github.com/your-username/gcpeasy/releases/latest/download/gcpeasy-macos-amd64.tar.gz | tar xz
-sudo mv gcpeasy-macos-amd64 /usr/local/bin/gcpeasy
+For ARM64 Linux, use `gcpeasy-linux-arm64.tar.gz`.
 
-# Apple Silicon Macs
-curl -L https://github.com/your-username/gcpeasy/releases/latest/download/gcpeasy-macos-arm64.tar.gz | tar xz
+### macOS
+
+```bash
+curl -L https://github.com/scttymn/gcpeasy/releases/latest/download/gcpeasy-macos-arm64.tar.gz | tar xz
 sudo mv gcpeasy-macos-arm64 /usr/local/bin/gcpeasy
 ```
 
-#### Windows
-Download `gcpeasy-windows-amd64.zip` from the releases page and extract the executable.
+For Intel Macs, use `gcpeasy-macos-amd64.tar.gz`.
 
-### Build from Source
+### Windows
+
+Download `gcpeasy-windows-amd64.zip` from the releases page and extract `gcpeasy.exe`.
+
+### Build From Source
 
 ```bash
-# Clone the repository
-git clone <repository-url>
+git clone git@github.com:scttymn/gcpeasy.git
 cd gcpeasy
-
-# Build the binary
-go build -o gcpeasy
-
-# (Optional) Add to PATH
-mv gcpeasy /usr/local/bin/
+mise install
+mise exec -- go build -o gcpeasy .
 ```
 
-### Verify Installation
+If you do not use mise, install Go 1.25+ and run:
+
+```bash
+go build -o gcpeasy .
+```
+
+Verify the installed binary:
+
 ```bash
 gcpeasy --version
 ```
 
 ## Quick Start
 
-1. **Authenticate with Google Cloud:**
-   ```bash
-   gcpeasy login
-   ```
+Open gcpeasy:
 
-2. **Select your environment (GCP project):**
-   ```bash
-   gcpeasy env list
-   gcpeasy env select
-   ```
+```bash
+gcpeasy
+```
 
-3. **Select your cluster:**
-   ```bash
-   gcpeasy cluster list
-   gcpeasy cluster select
-   ```
+If you are not authenticated, gcpeasy shows an authentication dialog. Choose **Authenticate** to launch the normal browser-based `gcloud auth login` flow, or choose **Quit** to exit.
 
-4. **Start using the tools:**
-   ```bash
-   gcpeasy pod list --status # List all pods with detailed status
-   gcpeasy logs             # View pod logs (shortcut)
-   gcpeasy shell            # Get shell access to a pod (shortcut)
-   gcpeasy rails console    # Access Rails console
-   ```
+Once authenticated:
 
-## Commands
+1. Select an environment to switch GCP projects.
+2. Select a cluster to configure kubectl credentials.
+3. Select a pod to make it the target for pod actions.
+4. Use the bottom key hints to run actions for the highlighted resource.
+
+Task output appears on the right. Interactive tasks such as pod shells and Rails consoles also run in the right pane.
+
+## TUI Controls
+
+| Key | Action |
+| --- | --- |
+| `tab`, `shift+tab` | Move focus between panes |
+| `1`, `2`, `3` | Focus environments, clusters, or pods |
+| `0` | Focus task output |
+| `j`, `k`, arrows | Move selection or scroll output |
+| `enter` | Run the primary action for the focused pane |
+| `space` | Open the command palette |
+| `?` | Open help |
+| `r` | Refresh context |
+| `q` | Quit |
+
+When a pod is highlighted:
+
+| Key | Action |
+| --- | --- |
+| `l` | View pod logs |
+| `f` | Follow pod logs |
+| `s` | Open a pod shell |
+| `c` | Open a Rails console |
+| `d` | Describe the pod |
+
+When the task output pane is focused and an interactive task is running, typing goes to the task. Use `ctrl+g` to return focus to the side panes, `ctrl+c` to interrupt the task, and `x` to stop it.
+
+## Command Palette
+
+Press `space` to open the command palette. It contains global, occasional actions:
+
+- Refresh context
+- Login to Google Cloud or logout from Google Cloud
+- Reset visibility
+
+Pod-specific actions stay in the footer hints when a pod is highlighted.
+
+## Visibility Preferences
+
+To reduce noise in the left panes:
+
+- Highlight an environment, cluster, or pod and press `h` to hide it.
+- Press `H` to temporarily show hidden and visible items together.
+- While hidden items are visible, select a hidden item and press `h` again to unhide it.
+- Use **Reset visibility** in the command palette to clear all hidden items.
+
+Hidden items are stored separately from cached context in:
+
+```text
+~/.config/gcpeasy/tui-preferences.json
+```
+
+Set `GCPEASY_CONFIG_DIR` to override this location.
+
+## Cached Context
+
+The TUI stores the last known left-pane state in:
+
+```text
+~/.config/gcpeasy/tui-state.json
+```
+
+This lets gcpeasy show the last known environments, clusters, and pods immediately while `gcloud` and `kubectl` refresh in the background. The cache is only for display state; hidden visibility preferences are stored separately.
+
+## CLI Commands
+
+The TUI is the default, but direct commands are still available.
+
+### TUI
+
+```bash
+gcpeasy
+gcpeasy tui
+gcpeasy ui
+```
 
 ### Authentication
-- `gcpeasy login` - Authenticate with Google Cloud
-- `gcpeasy logout` - Logout from Google Cloud
-
-### Environment Management
-- `gcpeasy env list` - List available GCP projects
-  - `--status` - Include connectivity status (slower)
-- `gcpeasy env select [project]` - Switch to a different project
-  - Interactive selection if no project specified
-  - Supports selection by project ID, name, or number
-
-### Cluster Management
-- `gcpeasy cluster list` - List available GKE clusters
-- `gcpeasy cluster select [cluster]` - Switch to a different cluster
-  - Interactive selection if no cluster specified
-  - Supports selection by cluster name or number
-
-### Pod Operations
-- `gcpeasy pod list` - List application pods (simple format)
-- `gcpeasy pod list --status` - List pods with detailed status information
-- `gcpeasy pod logs` - View pod logs with filtering options
-  - `-f, --follow` - Follow logs in real-time
-  - `-e, --error` - Show only error logs  
-  - `-w, --warn` - Show only warning logs
-  - `-i, --info` - Show only info logs
-  - `-d, --debug` - Show only debug logs
-- `gcpeasy pod shell` - Open interactive shell on selected pod
-  - Tries bash, zsh, sh in order of preference
-- `gcpeasy logs` - Shortcut for `pod logs`
-- `gcpeasy shell` - Shortcut for `pod shell`
-
-### Rails Support
-- `gcpeasy rails console` (or `gcpeasy rails c`) - Access Rails console
-- `gcpeasy rails logs` - View Rails application logs (deprecated: use `gcpeasy pod logs`)
-  - Same flags as `pod logs`
-
-## Usage Patterns
-
-### Interactive Selection
-Most commands support interactive selection with numbered lists:
 
 ```bash
-$ gcpeasy env list
-Available environments:
-
-- [ ] 1. project-dev (Development Project)
-- [x] 2. project-staging (Staging Project)  
-- [ ] 3. project-prod (Production Project)
-
-$ gcpeasy cluster select
-✅ Found 2 clusters:
-
-1. dev-cluster (us-central1)
-2. prod-cluster (us-east1)
-
-Select cluster (number, or 'q' to quit): 1
+gcpeasy login
+gcpeasy logout
 ```
 
-### Direct Selection
-Commands also support direct selection by name or number:
+`login` runs `gcloud auth login` and `gcloud auth application-default login`.
+
+### Environments
 
 ```bash
-gcpeasy env select 2                    # Select by number
-gcpeasy env select project-prod         # Select by project ID
-gcpeasy cluster select prod-cluster     # Select by cluster name
+gcpeasy env list
+gcpeasy env list --status
+gcpeasy env select
+gcpeasy env select <project-id-or-number>
 ```
 
-### Current Context
-gcpeasy respects and manages your current context:
+### Clusters
 
-- **Project context**: Set with `gcpeasy env select`, used by all commands
-- **Cluster context**: Set with `gcpeasy cluster select`, configures kubectl
-- **Smart defaults**: Auto-selects when only one option available
+```bash
+gcpeasy cluster list
+gcpeasy cluster select
+gcpeasy cluster select <cluster-name-or-number>
+```
 
-## How It Works
+Cluster selection runs `gcloud container clusters get-credentials` for the selected GKE cluster.
 
-### Cluster Behavior
-- If kubectl is configured and working → uses current context
-- If kubectl not configured → prompts for cluster selection and configures kubectl
-- Use `gcpeasy cluster select` to explicitly change clusters
+### Pods
 
-### Environment Behavior  
-- If only 1 project accessible → auto-selects
-- If multiple projects → prompts for selection
-- Use `gcpeasy env select` to change projects
+```bash
+gcpeasy pod list
+gcpeasy pod list --status
+gcpeasy pod logs
+gcpeasy pod logs --follow
+gcpeasy pod logs --all
+gcpeasy pod logs --error
+gcpeasy pod logs --warn
+gcpeasy pod logs --info
+gcpeasy pod logs --debug
+gcpeasy pod shell
+```
 
-### Pod Selection
-- Shows only application pods (filters out system namespaces)
-- Displays running pods and pods with issues for debugging
-- Consistent numbered selection across all pod-related commands
+Shortcuts:
+
+```bash
+gcpeasy logs
+gcpeasy shell
+```
+
+### Rails
+
+```bash
+gcpeasy rails console
+gcpeasy rails c
+```
+
+`gcpeasy rails logs` still exists for compatibility, but it is deprecated. Use `gcpeasy pod logs` instead.
+
+## How Context Works
+
+- Project context comes from `gcloud config get-value project`.
+- Environment selection updates the active gcloud project.
+- Cluster selection updates kubectl credentials for the active project.
+- Pods are discovered from the current kubectl context and system namespaces are filtered out.
+- If a command needs a cluster and kubectl is not configured, gcpeasy prompts for cluster selection.
+
+## Development
+
+Run tests:
+
+```bash
+mise exec -- go test ./...
+```
+
+Build locally:
+
+```bash
+mise exec -- go build ./...
+```
+
+The release workflow runs on pushed tags matching `v*`. The tag is used as the binary version via Go linker flags.
 
 ## Project Structure
 
-```
+```text
 gcpeasy/
-├── cmd/                    # CLI commands
-│   ├── root.go            # Root command and global flags
-│   ├── auth.go            # Authentication commands (login/logout)
-│   ├── env.go             # Environment/project management
-│   ├── cluster.go         # Cluster management
-│   ├── pod.go             # Pod management commands
-│   ├── logs.go            # Logs shortcut command
-│   ├── shell.go           # Shell shortcut command
-│   └── rails.go           # Rails-specific commands
-├── internal/              # Internal packages
-│   ├── kubernetes.go      # Kubernetes cluster operations
-│   └── pod.go            # Pod operations and selection
-├── main.go               # Application entry point
-└── README.md            # This file
+├── .github/workflows/     # Release automation
+├── cmd/                   # CLI commands and TUI
+│   ├── root.go            # Root command and version flag
+│   ├── tui.go             # Interactive terminal UI
+│   ├── tui_test.go        # TUI behavior tests
+│   ├── auth.go            # Login/logout commands
+│   ├── env.go             # GCP project management
+│   ├── cluster.go         # GKE cluster management
+│   ├── pod.go             # Pod list/log/shell commands
+│   ├── logs.go            # Logs shortcut
+│   ├── shell.go           # Shell shortcut
+│   └── rails.go           # Rails console/log commands
+├── internal/              # Kubernetes helpers
+├── main.go                # Application entry point
+├── go.mod
+└── README.md
 ```
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.

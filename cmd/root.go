@@ -15,6 +15,9 @@ var rootCmd = &cobra.Command{
 	Long: `gcpeasy streamlines working with Google Cloud Platform and Kubernetes infrastructure 
 by providing simple commands for common development workflows. It eliminates the need 
 to remember complex kubectl and gcloud commands and automates environment switching.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runTUI()
+	},
 }
 
 func Execute() {
