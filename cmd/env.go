@@ -87,40 +87,40 @@ func listEnvironments(showStatus bool) error {
 	}
 
 	currentProject := getCurrentProject()
-	
+
 	fmt.Println("Available environments:")
 	fmt.Println()
-	
+
 	for i, project := range projects {
 		checkbox := "- [ ]"
 		if project.ProjectID == currentProject {
 			checkbox = "- [x]"
 		}
-		
+
 		if showStatus {
 			status := getProjectStatus(project.ProjectID)
-			fmt.Printf("%s %d. %s (%s) %s\n", 
+			fmt.Printf("%s %d. %s (%s) %s\n",
 				checkbox,
-				i+1, 
+				i+1,
 				project.ProjectID,
-				project.Name, 
+				project.Name,
 				status,
 			)
 		} else {
-			fmt.Printf("%s %d. %s (%s)\n", 
+			fmt.Printf("%s %d. %s (%s)\n",
 				checkbox,
-				i+1, 
+				i+1,
 				project.ProjectID,
 				project.Name,
 			)
 		}
 	}
-	
+
 	if !showStatus {
 		fmt.Println()
 		fmt.Println("💡 Use 'gcpeasy env list --status' to see connectivity status")
 	}
-	
+
 	return nil
 }
 
@@ -151,19 +151,26 @@ func getProjectStatus(projectID string) string {
 	if err := cmd.Run(); err != nil {
 		return "✗ Not accessible"
 	}
-	
+
 	// Check if there are any GKE clusters in this project
 	cmd = exec.Command("gcloud", "container", "clusters", "list", "--project", projectID, "--format=value(name)")
 	output, err := cmd.Output()
 	if err == nil && len(strings.TrimSpace(string(output))) > 0 {
 		return "✓ Connected (has clusters)"
 	}
-	
+
 	return "✓ Accessible"
 }
 
 func isAuthenticated() bool {
-	cmd := exec.Command("gcloud", "auth", "list", "--filter=status:ACTIVE", "--format=value(account)")
+	// Validate the active credentials rather than just checking that an account
+	// is stored. `gcloud auth list` reports an account as ACTIVE even after its
+	// session has timed out; print-access-token actually exercises the stored
+	// credentials — refreshing the access token when needed and failing when
+	// reauthentication is required. Prompts are disabled so an expired session
+	// reports failure immediately instead of blocking on a password prompt.
+	cmd := exec.Command("gcloud", "auth", "print-access-token")
+	cmd.Env = append(os.Environ(), "CLOUDSDK_CORE_DISABLE_PROMPTS=1")
 	output, err := cmd.Output()
 	if err != nil {
 		return false
