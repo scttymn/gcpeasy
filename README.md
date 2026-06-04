@@ -89,7 +89,7 @@ Once authenticated:
 3. Select a pod to make it the target for pod actions.
 4. Use the bottom key hints to run actions for the highlighted resource.
 
-Task output appears on the right. Interactive tasks such as pod shells and Rails consoles also run in the right pane.
+Task output appears on the right. Interactive sessions such as pod shells and Rails consoles take over the full terminal (suspending the UI) so copy/paste, scrollback, and colors work like a normal shell; gcpeasy returns when you exit the session.
 
 ## TUI Controls
 

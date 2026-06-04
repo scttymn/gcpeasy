@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -94,10 +95,17 @@ type tuiStateMsg struct {
 	err      error
 }
 
-type tuiAuthStateMsg struct {
-	authenticated  bool
-	currentProject string
-	currentCluster string
+// loadStartedMsg carries the channel that a context load streams progress and
+// its final tuiStateMsg over, so the UI can report each step as it runs.
+type loadStartedMsg struct {
+	ch chan tea.Msg
+}
+
+// loadProgressMsg updates the status line ("Checking authentication",
+// "Loading projects", …) while a context load is in flight.
+type loadProgressMsg struct {
+	ch     chan tea.Msg
+	status string
 }
 
 type tuiStateCache struct {
@@ -171,6 +179,39 @@ func (tuiLoginCommand) SetStdin(io.Reader) {}
 func (tuiLoginCommand) SetStdout(io.Writer) {}
 
 func (tuiLoginCommand) SetStderr(io.Writer) {}
+
+// tuiInteractiveCommand runs an interactive remote session (pod shell, Rails
+// console) with the user's real terminal attached. It implements tea.ExecCommand
+// so tea.Exec releases the TUI (exits the alt screen, restores cooked mode),
+// runs the command against the actual terminal, then restores the TUI on exit.
+// This is what makes copy/paste, scrollback, colors, and line editing behave
+// natively — kubectl exec -it talks straight to the terminal instead of through
+// a captured PTY re-rendered inside a viewport.
+type tuiInteractiveCommand struct {
+	script string
+}
+
+func (c tuiInteractiveCommand) Run() error {
+	cmd := exec.Command("sh", "-lc", c.script)
+	// Keep the local gcloud/kubectl credential resolution non-interactive so the
+	// session reuses the already signed-in account. With a real terminal now
+	// attached (via tea.Exec), the gcloud get-credentials refresh would otherwise
+	// trigger an interactive reauthentication prompt and ask for a password; the
+	// previous captured-PTY path suppressed this by running under TERM=dumb. This
+	// is scoped to the local kubectl client and is not propagated into the pod,
+	// so the remote shell keeps its real terminal (colors, line editing) intact.
+	cmd.Env = append(os.Environ(), "CLOUDSDK_CORE_DISABLE_PROMPTS=1")
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func (tuiInteractiveCommand) SetStdin(io.Reader) {}
+
+func (tuiInteractiveCommand) SetStdout(io.Writer) {}
+
+func (tuiInteractiveCommand) SetStderr(io.Writer) {}
 
 type tuiCommandItem struct {
 	id          string
@@ -246,7 +287,7 @@ func newTUIModel() tuiModel {
 		hiddenEnvironments: map[string]bool{},
 		hiddenClusters:     map[string]bool{},
 		hiddenPods:         map[string]bool{},
-		status:             "Refreshing context...",
+		status:             "Checking authentication",
 		loading:            true,
 		booting:            true,
 		outputViewport:     viewport.New(20, 8),
@@ -264,7 +305,7 @@ func newTUIModel() tuiModel {
 }
 
 func (m tuiModel) Init() tea.Cmd {
-	return tea.Batch(loadTUIAuthState(), m.spinner.Tick)
+	return tea.Batch(loadTUIState(), m.spinner.Tick)
 }
 
 func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -276,7 +317,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.syncOutputViewport(true)
 		return m, nil
 	case spinner.TickMsg:
-		if !m.loading && !m.refreshModal {
+		if !m.loading && !m.refreshModal && !m.booting {
 			return m, nil
 		}
 		var cmd tea.Cmd
@@ -289,29 +330,13 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			_, _ = m.task.pty.Write([]byte(string(msg)))
 		}
 		return m, nil
-	case tuiAuthStateMsg:
-		m.booting = false
-		m.authenticated = msg.authenticated
-		m.currentProject = msg.currentProject
-		m.currentCluster = msg.currentCluster
-		if !msg.authenticated {
-			m.loading = false
-			m.refreshModal = false
-			m.status = "Authentication required"
-			m.authDialog = m.task == nil
-			m.clearCachedContext()
-			return m, nil
-		}
-
-		m.authDialog = false
-		m.applyPendingCacheForAuth()
-		if m.cacheLoaded {
-			m.status = "Ready"
-			m.refreshModal = false
-			m.refreshOutput = false
-			m.setOutput()
-		}
-		return m, loadTUIState()
+	case loadStartedMsg:
+		return m, waitForLoadEvent(msg.ch)
+	case loadProgressMsg:
+		// Report the current step on the splash / status line, then keep
+		// listening for the next step (or the final tuiStateMsg).
+		m.status = msg.status
+		return m, waitForLoadEvent(msg.ch)
 	case tuiStateMsg:
 		m.booting = false
 		if !msg.authenticated {
@@ -434,6 +459,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case authDoneMsg:
 		m.loading = false
 		if msg.err != nil {
+			// Sign-in failed: leave the splash and surface the dialog so the user
+			// can retry or quit.
+			m.booting = false
 			m.err = msg.err
 			m.authDialog = true
 			m.status = fmt.Sprintf("Authentication failed: %v", msg.err)
@@ -442,6 +470,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.err = nil
 		m.authDialog = false
+		// Hold the splash through the full refresh that follows sign-in; the UI
+		// is revealed when tuiStateMsg clears booting.
+		m.booting = true
 		m.status = "Authentication complete; refreshing context..."
 		m.authenticated = true
 		cacheApplied := m.applyPendingCacheForAuth()
@@ -759,7 +790,6 @@ func (m tuiModel) activate() (tea.Model, tea.Cmd) {
 		m.setOutput(
 			fmt.Sprintf("Selected pod: %s", m.selectedPod),
 			fmt.Sprintf("Status: %s | Ready: %s | Restarts: %s | Age: %s", pod.Status, pod.Ready, pod.Restarts, pod.Age),
-			fmt.Sprintf("Node: %s", pod.Node),
 		)
 		return m, nil
 	}
@@ -858,8 +888,7 @@ func (m tuiModel) runPodShell() (tea.Model, tea.Cmd) {
 		shQuote(pod.Namespace),
 	)
 	script = m.withKubectlCredentials("(" + script + ")")
-	m.setOutput("$ "+script, "")
-	return m, startTask(shellTask(fmt.Sprintf("Shell: %s", podRef(pod)), script, true, true), m.outputCols(), m.outputRows())
+	return m.runInteractiveSession(fmt.Sprintf("Shell: %s", podRef(pod)), script)
 }
 
 func (m tuiModel) runRailsConsole() (tea.Model, tea.Cmd) {
@@ -896,8 +925,23 @@ func (m tuiModel) runRailsConsole() (tea.Model, tea.Cmd) {
 	)
 
 	script := m.withKubectlCredentials("(" + strings.Join(attempts, " || ") + ")")
-	m.setOutput("$ "+script, "")
-	return m, startTask(shellTask(fmt.Sprintf("Rails console: %s", podRef(pod)), script, true, true), m.outputCols(), m.outputRows())
+	return m.runInteractiveSession(fmt.Sprintf("Rails console: %s", podRef(pod)), script)
+}
+
+// runInteractiveSession hands the user's real terminal to an interactive remote
+// session via tea.Exec, rather than capturing it into the output viewport like
+// startTask does. The TUI is suspended for the duration and restored on exit,
+// so the session behaves like running kubectl directly from a normal shell.
+func (m tuiModel) runInteractiveSession(title string, script string) (tea.Model, tea.Cmd) {
+	m.focus = panelOutput
+	m.status = fmt.Sprintf("%s — running in your terminal", title)
+	m.setOutput(
+		fmt.Sprintf("%s is running in your terminal.", title),
+		"Type 'exit' or press Ctrl-D to return to gcpeasy.",
+	)
+	return m, tea.Exec(tuiInteractiveCommand{script: script}, func(err error) tea.Msg {
+		return taskDoneMsg{spec: taskSpec{title: title, refresh: true}, err: err}
+	})
 }
 
 func (m tuiModel) renderBootScreen(width int, height int) string {
@@ -907,7 +951,11 @@ func (m tuiModel) renderBootScreen(width int, height int) string {
 	}
 	logo := renderGradientLogo(logoLines)
 
-	message := tuiHelpStyle.Render(fmt.Sprintf("%s checking authentication", m.spinner.View()))
+	status := strings.TrimSpace(m.status)
+	if status == "" {
+		status = "Checking authentication"
+	}
+	message := tuiHelpStyle.Render(fmt.Sprintf("%s %s", m.spinner.View(), status))
 	detail := tuiMutedStyle.Render("Loading your GCP workspace")
 	block := lipgloss.JoinVertical(lipgloss.Center, logo, "", message, detail)
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, block)
@@ -2384,59 +2432,104 @@ func (m *tuiModel) stopTask() {
 	m.task = nil
 }
 
-func loadTUIAuthState() tea.Cmd {
+// loadTUIState refreshes the full context (auth, projects, clusters, pods) on a
+// background goroutine, streaming a progress update before each step so the
+// splash / status line reflects what is currently running. The final event on
+// the channel is the assembled tuiStateMsg.
+func loadTUIState() tea.Cmd {
 	return func() tea.Msg {
-		return tuiAuthStateMsg{
-			authenticated:  isAuthenticated(),
-			currentProject: getCurrentProject(),
-			currentCluster: getCurrentKubectlCluster(),
-		}
+		ch := make(chan tea.Msg, 8)
+		go runContextLoad(ch)
+		return loadStartedMsg{ch: ch}
 	}
 }
 
-func loadTUIState() tea.Cmd {
+func runContextLoad(ch chan tea.Msg) {
+	ch <- loadProgressMsg{ch: ch, status: "Checking authentication"}
+	msg := tuiStateMsg{
+		authenticated:  isAuthenticated(),
+		currentProject: getCurrentProject(),
+		currentCluster: getCurrentKubectlCluster(),
+	}
+
+	if !msg.authenticated {
+		ch <- msg
+		return
+	}
+
+	// Projects and clusters are independent: the cluster list only needs the
+	// already-known current project, not the project list. Fetch them
+	// concurrently so the slower of the two bounds the wait instead of the sum.
+	loadClusters := msg.currentProject != ""
+	if loadClusters {
+		ch <- loadProgressMsg{ch: ch, status: fmt.Sprintf("Loading projects and clusters in %s", msg.currentProject)}
+	} else {
+		ch <- loadProgressMsg{ch: ch, status: "Loading projects"}
+	}
+
+	var (
+		wg          sync.WaitGroup
+		projects    []GCPProject
+		projectsErr error
+		clusters    []internal.ClusterInfo
+		clustersErr error
+	)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		projects, projectsErr = getGCPProjects()
+	}()
+
+	if loadClusters {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			clusters, clustersErr = internal.GetGKEClusters(msg.currentProject)
+		}()
+	}
+
+	wg.Wait()
+
+	if projectsErr != nil {
+		msg.warnings = append(msg.warnings, fmt.Sprintf("projects unavailable: %v", projectsErr))
+	} else {
+		msg.projects = projects
+		msg.projectsLoaded = true
+	}
+
+	if !loadClusters {
+		// No current project selected, so there are no clusters or pods to load.
+		ch <- msg
+		return
+	}
+
+	if clustersErr != nil {
+		msg.warnings = append(msg.warnings, fmt.Sprintf("clusters unavailable: %v", clustersErr))
+	} else {
+		msg.clusters = clusters
+		msg.clustersLoaded = true
+	}
+
+	if msg.currentCluster != "" {
+		ch <- loadProgressMsg{ch: ch, status: "Loading pods"}
+		pods, err := internal.GetDetailedPodInfo()
+		if err != nil {
+			msg.warnings = append(msg.warnings, fmt.Sprintf("pods unavailable: %v", err))
+		} else {
+			msg.pods = pods
+			msg.podsLoaded = true
+		}
+	}
+
+	ch <- msg
+}
+
+// waitForLoadEvent blocks for the next streamed load event (progress or the
+// final tuiStateMsg) and hands it back to the update loop.
+func waitForLoadEvent(ch chan tea.Msg) tea.Cmd {
 	return func() tea.Msg {
-		msg := tuiStateMsg{
-			authenticated:  isAuthenticated(),
-			currentProject: getCurrentProject(),
-			currentCluster: getCurrentKubectlCluster(),
-		}
-
-		if !msg.authenticated {
-			return msg
-		}
-
-		projects, err := getGCPProjects()
-		if err != nil {
-			msg.warnings = append(msg.warnings, fmt.Sprintf("projects unavailable: %v", err))
-		} else {
-			msg.projects = projects
-			msg.projectsLoaded = true
-		}
-
-		if msg.currentProject == "" {
-			return msg
-		}
-
-		clusters, err := internal.GetGKEClusters(msg.currentProject)
-		if err != nil {
-			msg.warnings = append(msg.warnings, fmt.Sprintf("clusters unavailable: %v", err))
-		} else {
-			msg.clusters = clusters
-			msg.clustersLoaded = true
-		}
-
-		if msg.currentCluster != "" {
-			pods, err := internal.GetDetailedPodInfo()
-			if err != nil {
-				msg.warnings = append(msg.warnings, fmt.Sprintf("pods unavailable: %v", err))
-			} else {
-				msg.pods = pods
-				msg.podsLoaded = true
-			}
-		}
-
-		return msg
+		return <-ch
 	}
 }
 

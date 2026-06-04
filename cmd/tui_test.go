@@ -40,7 +40,7 @@ func TestStartupRendersBootScreenBeforeAuthCheck(t *testing.T) {
 	model.height = 32
 
 	view := stripANSI(model.View())
-	for _, want := range []string{"GCPEASY", "checking authentication", "Loading your GCP workspace"} {
+	for _, want := range []string{"GCPEASY", "Checking authentication", "Loading your GCP workspace"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("expected boot screen to include %q, got %q", want, view)
 		}
@@ -599,21 +599,29 @@ func TestModelDefersCachedLeftPaneStateUntilAuthVerified(t *testing.T) {
 		t.Fatal("expected startup to use boot screen instead of refresh modal")
 	}
 
-	updated, cmd := model.Update(tuiAuthStateMsg{
+	// While the context loads, the splash stays up and reports the live step.
+	updated, _ := model.Update(loadProgressMsg{status: "Loading projects"})
+	loading := updated.(tuiModel)
+	if !loading.booting {
+		t.Fatal("expected splash to stay up while context loads")
+	}
+	if loading.status != "Loading projects" {
+		t.Fatalf("expected progress status on splash, got %q", loading.status)
+	}
+
+	// The final state event reveals the UI and applies the cached panes.
+	updated, _ = loading.Update(tuiStateMsg{
 		authenticated:  true,
 		currentProject: cache.CurrentProject,
 		currentCluster: cache.CurrentCluster,
 	})
 	got := updated.(tuiModel)
 
-	if cmd == nil {
-		t.Fatal("expected auth verification to start full context refresh")
-	}
 	if got.booting {
-		t.Fatal("expected auth verification to leave boot screen")
+		t.Fatal("expected full context load to leave the boot screen")
 	}
 	if !got.cacheLoaded {
-		t.Fatal("expected model to load cached state after auth is verified")
+		t.Fatal("expected model to load cached state after the context load")
 	}
 	if !got.authenticated {
 		t.Fatal("expected verified auth state")
@@ -622,16 +630,16 @@ func TestModelDefersCachedLeftPaneStateUntilAuthVerified(t *testing.T) {
 		t.Fatalf("expected cached project %q, got %q", cache.CurrentProject, got.currentProject)
 	}
 	if len(got.projects) != 1 || len(got.clusters) != 1 || len(got.pods) != 1 {
-		t.Fatalf("expected cached panes after auth verification, got projects=%d clusters=%d pods=%d", len(got.projects), len(got.clusters), len(got.pods))
+		t.Fatalf("expected cached panes after the context load, got projects=%d clusters=%d pods=%d", len(got.projects), len(got.clusters), len(got.pods))
 	}
 	if !got.cacheHasPanes {
 		t.Fatal("expected cache pane marker")
 	}
 	if got.refreshModal {
-		t.Fatal("expected refresh modal to close after auth verification")
+		t.Fatal("expected refresh modal to stay closed during boot")
 	}
-	if !got.loading {
-		t.Fatal("expected full context refresh to continue in the background")
+	if got.loading {
+		t.Fatal("expected the streamed context load to finish")
 	}
 }
 
@@ -653,14 +661,14 @@ func TestUnauthenticatedRefreshHidesCacheButKeepsItForLogin(t *testing.T) {
 	}
 
 	model := newTUIModel()
-	updated, _ := model.Update(tuiAuthStateMsg{authenticated: false})
+	updated, _ := model.Update(tuiStateMsg{authenticated: false})
 	got := updated.(tuiModel)
 
 	if !got.authDialog {
 		t.Fatal("expected auth dialog when refresh reports unauthenticated")
 	}
 	if got.booting {
-		t.Fatal("expected unauthenticated auth check to leave boot screen")
+		t.Fatal("expected unauthenticated context load to leave boot screen")
 	}
 	if model.cacheLoaded {
 		t.Fatal("expected startup model not to expose cache")
