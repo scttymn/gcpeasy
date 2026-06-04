@@ -86,15 +86,14 @@ func GetDetailedPodInfo() ([]PodInfo, error) {
 		restarts := fields[4]   // Already summed by kubectl
 		age := fields[5]
 		
-		// Get node info separately if needed
-		node := getNodeForPod(namespace, podName)
-		
 		// Skip system namespaces
 		if isSystemNamespace(namespace) {
 			continue
 		}
-		
-		// Include running pods and pods with issues (for debugging)
+
+		// Include running pods and pods with issues (for debugging). Node is
+		// intentionally left unset: it costs a per-pod kubectl call and isn't
+		// needed to identify or act on a pod. Fetch it on demand in a detail view.
 		if status == "Running" || status == "Pending" || status == "CrashLoopBackOff" || status == "Error" {
 			pods = append(pods, PodInfo{
 				Namespace: namespace,
@@ -103,22 +102,11 @@ func GetDetailedPodInfo() ([]PodInfo, error) {
 				Ready:     ready,
 				Restarts:  restarts,
 				Age:       age,
-				Node:      node,
 			})
 		}
 	}
 
 	return pods, nil
-}
-
-// getNodeForPod gets the node name for a specific pod
-func getNodeForPod(namespace, podName string) string {
-	cmd := exec.Command("kubectl", "get", "pod", podName, "-n", namespace, "-o", "jsonpath={.spec.nodeName}")
-	output, err := cmd.Output()
-	if err != nil {
-		return "<unknown>"
-	}
-	return strings.TrimSpace(string(output))
 }
 
 // SelectPod prompts user to select a pod from the list

@@ -135,19 +135,18 @@ func listPods(showStatus bool) error {
 
 	if showStatus {
 		// Print detailed status table
-		fmt.Printf("%-15s %-35s %-12s %-8s %-8s %-10s %-20s\n",
-			"NAMESPACE", "NAME", "STATUS", "READY", "RESTARTS", "AGE", "NODE")
-		fmt.Println(strings.Repeat("-", 110))
+		fmt.Printf("%-15s %-35s %-12s %-8s %-8s %-10s\n",
+			"NAMESPACE", "NAME", "STATUS", "READY", "RESTARTS", "AGE")
+		fmt.Println(strings.Repeat("-", 93))
 
 		for _, pod := range pods {
-			fmt.Printf("%-15s %-35s %-12s %-8s %-8s %-10s %-20s\n",
+			fmt.Printf("%-15s %-35s %-12s %-8s %-8s %-10s\n",
 				truncate(pod.Namespace, 15),
 				truncate(pod.Name, 35),
 				pod.Status,
 				pod.Ready,
 				pod.Restarts,
-				pod.Age,
-				truncate(pod.Node, 20))
+				pod.Age)
 		}
 	} else {
 		// Print simple list
